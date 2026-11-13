@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main", "master"] # Chạy khi có code mới đẩy lên nhánh main hoặc master
+    branches: ["main", "master"]
   workflow_dispatch:
 
 permissions:
@@ -10,8 +10,9 @@ permissions:
   pages: write
   id-token: write
 
+# Chỉ chạy một lần deploy tại một thời điểm
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
@@ -20,21 +21,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          
+          # Vite 8 cần Node 20.19+ hoặc 22.12+
+          node-version: "22"
+
       - name: Install dependencies
-        run: npm install
-        
+        # --legacy-peer-deps bỏ qua xung đột phiên bản esbuild (lỗi ERESOLVE)
+        run: npm install --legacy-peer-deps
+
       - name: Build
-        run: npm run build
+        # --base để file JS/CSS tải đúng đường dẫn https://tên.github.io/tên-repo/
+        # Nếu repo tên là <tên>.github.io thì đổi thành: npm run build
+        run: npm run build -- --base=/${{ github.event.repository.name }}/
         env:
-          # Dòng này sẽ lấy API Key từ Bước 1 bạn đã cài để đưa vào web
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          
+          # Tùy chọn: tạo biến này ở Settings > Secrets and variables > Actions > Variables
+          # Không dùng secrets vì mọi biến VITE_ đều lộ công khai trong file JS
+          VITE_FIREBASE_DATABASE_URL: ${{ vars.VITE_FIREBASE_DATABASE_URL }}
+
+      - name: Tạo 404.html cho đường dẫn trực tiếp
+        # GitHub Pages không có "rewrite", nên sao chép index.html thành 404.html
+        # để mở thẳng một đường dẫn con vẫn vào được app
+        run: cp dist/index.html dist/404.html
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
