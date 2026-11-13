@@ -168,7 +168,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
       {!hideMobileNav && (
         <nav
           aria-label="Điều hướng dưới cùng"
-          className="md:hidden order-2 min-h-[calc(52px+var(--safe-bottom))] pb-safe px-safe w-full bg-elevated/95 glass-panel border-t border-subtle flex items-center justify-around touch-gap select-none z-30 flex-shrink-0"
+          className="md:hidden order-3 min-h-[calc(52px+var(--safe-bottom))] pb-safe px-safe w-full bg-elevated/95 glass-panel border-t border-subtle flex items-center justify-around touch-gap select-none z-30 flex-shrink-0"
         >
           <button
             type="button"

@@ -2249,12 +2249,14 @@ export default function App() {
         className="relative z-[1] bg-transparent h-viewport w-full max-w-full flex flex-col overflow-hidden text-primary font-sans transition-colors duration-200"
       >
         {isLearningOpen ? (
-          <LearnPage
-            onBackToEditor={() => setIsLearningOpen(false)}
-            onOpenInEditor={handleOpenLessonInEditor}
-            theme={theme}
-            onToggleTheme={handleToggleTheme}
-          />
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <LearnPage
+              onBackToEditor={() => setIsLearningOpen(false)}
+              onOpenInEditor={handleOpenLessonInEditor}
+              theme={theme}
+              onToggleTheme={handleToggleTheme}
+            />
+          </div>
         ) : (
           <>
             {/* Firebase Config Missing Warning Banner */}
@@ -2618,6 +2620,13 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* Mobile credit strip above mobile bottom nav */}
+        {workspacePreset !== 'zen' && !viewport.isKeyboardOpen && (
+          <div className="md:hidden order-2 h-6 px-3 bg-elevated/90 glass-panel border-t border-subtle flex items-center justify-center text-[11px] text-muted select-none flex-shrink-0">
+            <span className="truncate">Được tạo bởi tổ 4 — 12C6 — 2024-2027</span>
+          </div>
+        )}
       </div>
 
       {/* Confirmation Modal for Clearing Code */}
@@ -2891,6 +2900,20 @@ export default function App() {
         />
       )}
           </>
+        )}
+
+        {/* Global Website Credit Footer */}
+        {(isLearningOpen || workspacePreset !== 'zen') && (
+          <footer
+            role="contentinfo"
+            className={`${
+              isLearningOpen
+                ? 'flex min-h-[calc(24px+var(--safe-bottom))] pb-safe'
+                : 'hidden md:flex h-6'
+            } px-4 bg-elevated glass-panel border-t border-subtle items-center justify-center text-[11px] text-muted select-none flex-shrink-0 z-20`}
+          >
+            <span className="truncate">Được tạo bởi tổ 4 — 12C6 — 2024-2027</span>
+          </footer>
         )}
       </div>
     </>
