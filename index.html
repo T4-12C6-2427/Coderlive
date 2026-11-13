@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>HTMLive - Trình Biên Tập & Xem Trước HTML Trực Tiếp</title>
+    <meta name="description" content="Trình soạn thảo mã HTML, CSS và JavaScript trực tuyến với tính năng xem trước tức thì, tùy chọn kích thước hiển thị và bảng thông báo lỗi." />
+    <meta property="og:title" content="HTMLive - Trình Biên Tập & Xem Trước HTML Trực Tiếp" />
+    <meta property="og:description" content="Trình soạn thảo mã HTML, CSS và JavaScript trực tuyến với tính năng xem trước tức thì, tùy chọn kích thước hiển thị và bảng thông báo lỗi." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Apply saved theme & viewport tokens before first paint to prevent layout or theme flash -->
+    <script>
+      (function() {
+        try {
+          var root = document.documentElement;
+          var vv = window.visualViewport;
+          var initialHeight = vv ? vv.height : window.innerHeight;
+          if (initialHeight > 0) {
+            root.style.setProperty('--app-height', initialHeight + 'px');
+          }
+          var isTouch = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse), (pointer: coarse)').matches;
+          if (isTouch) {
+            root.classList.add('is-touch');
+          }
+
+          var saved = localStorage.getItem('htmlive_theme_settings_v2');
+          var mode = 'dark';
+          var accent = '#6366f1';
+          if (saved) {
+            var parsed = JSON.parse(saved);
+            if (parsed.mode) mode = parsed.mode;
+            if (parsed.accentColor) accent = parsed.accentColor;
+          } else {
+            var legacy = localStorage.getItem('htmlive_theme_mode_v1');
+            if (legacy === 'light') mode = 'light';
+          }
+          if (mode === 'dark') {
+            root.classList.add('dark');
+            root.classList.remove('light');
+            root.setAttribute('data-theme', 'dark');
+          } else {
+            root.classList.add('light');
+            root.classList.remove('dark');
+            root.setAttribute('data-theme', 'light');
+          }
+          root.style.setProperty('--accent', accent);
+          root.style.setProperty('--accent-base', accent);
+        } catch(e) {}
+      })();
+    </script>
+  </head>
+  <body class="text-primary antialiased selection:bg-accent-soft selection:text-accent font-sans bg-transparent">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

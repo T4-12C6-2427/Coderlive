@@ -1,0 +1,339 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // =========================================================
+    // QUY TẮC DỮ LIỆU CÁ NHÂN (GIỮ NGUYÊN HOÀN TOÀN)
+    // =========================================================
+
+    // Tài liệu người dùng (profile, preferences, themeSettings, health checks)
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Tất cả các bộ sưu tập con của người dùng (preferences, learning, themes, health, v.v.)
+    match /users/{userId}/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Quản lý dự án cá nhân: Chủ sở hữu có toàn quyền; người dùng khác có thể đọc nếu dự án được chia sẻ công khai
+    match /users/{userId}/projects/{projectId} {
+      allow get: if isOwner(userId) || resource.data.isShared == true;
+      allow list, create, update, delete: if isOwner(userId);
+    }
+
+    // =========================================================
+    // QUY TẮC DỰ ÁN NHÓM CỘNG TÁC (COLLAB PROJECTS)
+    // =========================================================
+
+    function isValidMemberProfile(profile) {
+      return profile is map
+        && profile.name is string
+        && profile.name.size() >= 1
+        && profile.name.size() <= 100
+        && (!('photoURL' in profile) || profile.photoURL == null || (profile.photoURL is string && profile.photoURL.size() <= 1024))
+        && (!('email' in profile) || profile.email == null || (profile.email is string && profile.email.size() <= 200));
+    }
+
+    function isValidCollabProjectFields(data) {
+      return data.id is string
+        && isValidId(data.id)
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 60
+        && (!('description' in data) || (data.description is string && data.description.size() <= 300))
+        && data.languages is list
+        && data.languages.size() >= 1
+        && data.languages.size() <= 3
+        && data.ownerId is string
+        && data.members is map
+        && data.members.size() >= 1
+        && data.members.size() <= 100
+        && data.ownerId in data.members
+        && data.members[data.ownerId] == 'owner'
+        && data.memberProfiles is map
+        && data.inviteEnabled is bool
+        && data.inviteToken is string
+        && data.inviteToken.size() >= 16
+        && data.inviteToken.size() <= 128
+        && data.inviteRole in ['editor', 'viewer']
+        && data.createdAt is string
+        && data.updatedAt is string;
+    }
+
+    function isCollabOwnerExisting() {
+      return isSignedIn()
+        && resource.data.ownerId == request.auth.uid
+        && (request.auth.uid in resource.data.members)
+        && resource.data.members[request.auth.uid] == 'owner';
+    }
+
+    function collabProjectDoc(projectId) {
+      return get(/databases/$(database)/documents/collabProjects/$(projectId)).data;
+    }
+
+    function isCollabProjectMember(projectId) {
+      return isSignedIn()
+        && (request.auth.uid in collabProjectDoc(projectId).members)
+        && (collabProjectDoc(projectId).members[request.auth.uid] in ['owner', 'editor', 'viewer']);
+    }
+
+    function isCollabProjectEditorOrOwner(projectId) {
+      return isSignedIn()
+        && (request.auth.uid in collabProjectDoc(projectId).members)
+        && (collabProjectDoc(projectId).members[request.auth.uid] in ['owner', 'editor']);
+    }
+
+    function isCollabProjectOwner(projectId) {
+      return isSignedIn()
+        && collabProjectDoc(projectId).ownerId == request.auth.uid
+        && (request.auth.uid in collabProjectDoc(projectId).members)
+        && (collabProjectDoc(projectId).members[request.auth.uid] == 'owner');
+    }
+
+    function isValidUpdateChunk() {
+      return request.resource.data.keys().hasOnly(['updateBase64', 'authorId', 'createdAt'])
+        && request.resource.data.updateBase64 is string
+        && request.resource.data.updateBase64.size() >= 1
+        && request.resource.data.updateBase64.size() <= 900000
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.createdAt is string;
+    }
+
+    function isValidSnapshot() {
+      return request.resource.data.keys().hasOnly(['stateBase64', 'updatedBy', 'updatedAt'])
+        && request.resource.data.stateBase64 is string
+        && request.resource.data.stateBase64.size() >= 1
+        && request.resource.data.stateBase64.size() <= 950000
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt is string;
+    }
+
+    match /collabProjects/{projectId} {
+      // Chỉ thành viên mới được đọc siêu dữ liệu dự án nhóm
+      allow get: if isSignedIn()
+        && (request.auth.uid in resource.data.members)
+        && (resource.data.members[request.auth.uid] in ['owner', 'editor', 'viewer']);
+
+      // Cho phép truy vấn danh sách dự án nhóm mà người dùng là thành viên (members.{uid} in ['owner', 'editor', 'viewer'])
+      allow list: if isSignedIn()
+        && resource.data.members[request.auth.uid] in ['owner', 'editor', 'viewer'];
+
+      // Chỉ người dùng đã đăng nhập mới tạo được dự án nhóm với chính mình là owner duy nhất ban đầu
+      allow create: if isSignedIn()
+        && isValidId(projectId)
+        && request.resource.data.id == projectId
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.members.keys().hasOnly([request.auth.uid])
+        && request.resource.data.members[request.auth.uid] == 'owner'
+        && request.resource.data.memberProfiles.keys().hasOnly([request.auth.uid])
+        && isValidMemberProfile(request.resource.data.memberProfiles[request.auth.uid])
+        && isValidCollabProjectFields(request.resource.data);
+
+      // Chỉ chủ sở hữu mới được xóa dự án nhóm
+      allow delete: if isCollabOwnerExisting();
+
+      // Cập nhật dự án nhóm theo 4 luồng chặt chẽ:
+      // 1. Chủ sở hữu thay đổi cài đặt, thành viên, vai trò, lời mời hoặc chuyển quyền sở hữu
+      // 2. Thành viên không phải chủ sở hữu tự rời khỏi dự án (chỉ xóa chính UID của mình)
+      // 3. Người dùng tham gia qua liên kết mời hợp lệ (chỉ tự thêm chính mình với đúng inviteRole)
+      // 4. Biên tập viên cập nhật dấu thời gian đồng bộ (updatedAt)
+      allow update: if (
+        // Luồng 1: Chủ sở hữu
+        isCollabOwnerExisting()
+        && isValidCollabProjectFields(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.id == resource.data.id
+      ) || (
+        // Luồng 2: Thành viên tự rời dự án
+        isSignedIn()
+        && (request.auth.uid in resource.data.members)
+        && (resource.data.members[request.auth.uid] in ['editor', 'viewer'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberProfiles', 'updatedAt'])
+        && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
+        && !(request.auth.uid in request.resource.data.members)
+        && request.resource.data.memberProfiles.diff(resource.data.memberProfiles).affectedKeys().hasOnly([request.auth.uid])
+        && !(request.auth.uid in request.resource.data.memberProfiles)
+        && request.resource.data.updatedAt is string
+      ) || (
+        // Luồng 3: Tham gia qua liên kết mời
+        isSignedIn()
+        && !(request.auth.uid in resource.data.members)
+        && resource.data.inviteEnabled == true
+        && resource.data.inviteToken is string
+        && resource.data.inviteToken.size() >= 16
+        && resource.data.inviteRole in ['editor', 'viewer']
+        && request.resource.data.inviteTokenUsed == resource.data.inviteToken
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberProfiles', 'inviteTokenUsed', 'updatedAt'])
+        && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.members[request.auth.uid] == resource.data.inviteRole
+        && request.resource.data.memberProfiles.diff(resource.data.memberProfiles).affectedKeys().hasOnly([request.auth.uid])
+        && isValidMemberProfile(request.resource.data.memberProfiles[request.auth.uid])
+        && request.resource.data.updatedAt is string
+      ) || (
+        // Luồng 4: Biên tập viên cập nhật updatedAt khi đồng bộ mã
+        isSignedIn()
+        && (request.auth.uid in resource.data.members)
+        && (resource.data.members[request.auth.uid] == 'editor')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])
+        && request.resource.data.updatedAt is string
+      );
+
+      // Chuỗi gói cập nhật Yjs CRDT
+      match /updates/{updateId} {
+        allow get, list: if isCollabProjectMember(projectId);
+        allow create: if isCollabProjectEditorOrOwner(projectId)
+          && isValidId(updateId)
+          && isValidUpdateChunk();
+        // Không cho phép sửa nội dung gói cập nhật; chỉ owner/editor được dọn gói cũ khi nén snapshot
+        allow update: if false;
+        allow delete: if isCollabProjectEditorOrOwner(projectId);
+      }
+
+      // Bản chụp trạng thái nén của tài liệu Yjs
+      match /snapshots/{snapshotId} {
+        allow get, list: if isCollabProjectMember(projectId);
+        allow create, update: if isCollabProjectEditorOrOwner(projectId)
+          && isValidId(snapshotId)
+          && isValidSnapshot();
+        allow delete: if isCollabProjectOwner(projectId);
+      }
+
+      // Bình luận theo dòng mã (tách biệt hoàn toàn khỏi Yjs CRDT)
+      match /comments/{commentId} {
+        allow get, list: if isCollabProjectMember(projectId);
+        allow create: if isCollabProjectMember(projectId)
+          && isValidId(commentId)
+          && request.resource.data.keys().hasOnly([
+            'id', 'projectId', 'tab', 'lineNumber', 'relPosJson',
+            'authorId', 'authorName', 'authorColor', 'text',
+            'resolved', 'resolvedByName', 'resolvedAt', 'replies',
+            'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.id == commentId
+          && request.resource.data.projectId == projectId
+          && request.resource.data.tab in ['html', 'css', 'js']
+          && request.resource.data.lineNumber is int
+          && request.resource.data.lineNumber >= 1
+          && request.resource.data.lineNumber <= 100000
+          && (request.resource.data.relPosJson == null || (request.resource.data.relPosJson is string && request.resource.data.relPosJson.size() <= 2000))
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.authorName is string
+          && request.resource.data.authorName.size() >= 1
+          && request.resource.data.authorName.size() <= 100
+          && request.resource.data.authorColor is string
+          && request.resource.data.authorColor.size() >= 1
+          && request.resource.data.authorColor.size() <= 20
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.resolved == false
+          && request.resource.data.resolvedByName == null
+          && request.resource.data.resolvedAt == null
+          && request.resource.data.replies is list
+          && request.resource.data.replies.size() == 0
+          && request.resource.data.createdAt is string
+          && request.resource.data.createdAt.size() <= 64
+          && request.resource.data.updatedAt is string
+          && request.resource.data.updatedAt.size() <= 64;
+
+        allow update: if isCollabProjectMember(projectId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'replies', 'resolved', 'resolvedByName', 'resolvedAt', 'updatedAt'
+          ])
+          && request.resource.data.replies is list
+          && request.resource.data.replies.size() <= 50
+          && request.resource.data.resolved is bool
+          && (request.resource.data.resolvedByName == null || (request.resource.data.resolvedByName is string && request.resource.data.resolvedByName.size() <= 100))
+          && (request.resource.data.resolvedAt == null || (request.resource.data.resolvedAt is string && request.resource.data.resolvedAt.size() <= 64))
+          && request.resource.data.updatedAt is string
+          && request.resource.data.updatedAt.size() <= 64;
+
+        allow delete: if isCollabProjectMember(projectId)
+          && (resource.data.authorId == request.auth.uid || isCollabProjectOwner(projectId));
+      }
+
+      // Tin nhắn trò chuyện ngắn giữa các thành viên dự án nhóm
+      match /messages/{messageId} {
+        allow get, list: if isCollabProjectMember(projectId);
+        allow create: if isCollabProjectMember(projectId)
+          && isValidId(messageId)
+          && request.resource.data.keys().hasOnly([
+            'id', 'projectId', 'authorId', 'authorName', 'authorColor', 'photoURL', 'text', 'createdAt'
+          ])
+          && request.resource.data.id == messageId
+          && request.resource.data.projectId == projectId
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.authorName is string
+          && request.resource.data.authorName.size() >= 1
+          && request.resource.data.authorName.size() <= 100
+          && request.resource.data.authorColor is string
+          && request.resource.data.authorColor.size() >= 1
+          && request.resource.data.authorColor.size() <= 20
+          && (request.resource.data.photoURL == null || (request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 1024))
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.createdAt is string
+          && request.resource.data.createdAt.size() <= 64;
+        allow update: if false;
+        allow delete: if isCollabProjectMember(projectId)
+          && (resource.data.authorId == request.auth.uid || isCollabProjectOwner(projectId));
+      }
+
+      // Trạng thái đồng bộ chế độ xem trước (tắt mặc định ở từng người dùng)
+      match /state/{stateId} {
+        allow get, list: if isCollabProjectMember(projectId);
+        allow create, update: if isCollabProjectMember(projectId)
+          && stateId == 'preview'
+          && request.resource.data.keys().hasOnly([
+            'device', 'refreshNonce', 'updatedByUid', 'updatedByName', 'updatedAt'
+          ])
+          && request.resource.data.device in ['desktop', 'tablet', 'mobile']
+          && request.resource.data.refreshNonce is int
+          && request.resource.data.refreshNonce >= 0
+          && request.resource.data.updatedByUid == request.auth.uid
+          && request.resource.data.updatedByName is string
+          && request.resource.data.updatedByName.size() >= 1
+          && request.resource.data.updatedByName.size() <= 100
+          && request.resource.data.updatedAt is int
+          && request.resource.data.updatedAt >= 0;
+        allow delete: if isCollabProjectOwner(projectId);
+      }
+    }
+
+    // Mã tra cứu lời mời dự án nhóm (không cho phép liệt kê, chỉ get khi có đúng token bí mật)
+    match /collabInvites/{inviteToken} {
+      allow list: if false;
+      allow get: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && isValidId(inviteToken)
+        && inviteToken.size() >= 16
+        && request.resource.data.keys().hasOnly(['projectId', 'ownerId', 'inviteRole', 'inviteEnabled', 'projectTitle', 'updatedAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isCollabProjectOwner(request.resource.data.projectId)
+        && request.resource.data.inviteRole in ['editor', 'viewer']
+        && request.resource.data.inviteEnabled is bool
+        && request.resource.data.projectTitle is string
+        && request.resource.data.updatedAt is string;
+      allow delete: if isSignedIn() && isCollabProjectOwner(resource.data.projectId);
+    }
+  }
+}

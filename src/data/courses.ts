@@ -1,0 +1,43 @@
+import { CourseInfo } from '../types/learning';
+
+export const COURSES: CourseInfo[] = [
+  {
+    id: 'html',
+    order: 1,
+    title: 'HTML Cơ Bản',
+    subtitle: 'Nền tảng & Cấu trúc trang web',
+    description: 'Học cách dựng khung xương cho trang web với các thẻ HTML thông dụng, văn bản, bảng và biểu mẫu.',
+    badge: 'HTML',
+    color: 'from-orange-500 to-amber-500',
+    gradient: 'border-[var(--course-html-border)] text-[var(--course-html-text)] bg-[var(--course-html-soft)]',
+    iconName: 'Code2',
+    lessonCount: 12,
+    status: 'available',
+  },
+  {
+    id: 'css',
+    order: 2,
+    title: 'CSS Cơ Bản',
+    subtitle: 'Trang trí & Bố cục hiện đại',
+    description: 'Làm chủ màu sắc, phông chữ, Flexbox, Grid, mô hình hộp và hoạt ảnh chuyển động mượt mà.',
+    badge: 'CSS',
+    color: 'from-blue-500 to-cyan-500',
+    gradient: 'border-[var(--course-css-border)] text-[var(--course-css-text)] bg-[var(--course-css-soft)]',
+    iconName: 'Palette',
+    lessonCount: 12,
+    status: 'available',
+  },
+  {
+    id: 'js',
+    order: 3,
+    title: 'JavaScript Cơ Bản',
+    subtitle: 'Ngôn ngữ lập trình của Web',
+    description: 'Học tư duy lập trình, biến, hàm, vòng lặp, tương tác DOM và gỡ lỗi với môi trường an toàn.',
+    badge: 'JS',
+    color: 'from-amber-400 to-yellow-500',
+    gradient: 'border-[var(--course-js-border)] text-[var(--course-js-text)] bg-[var(--course-js-soft)]',
+    iconName: 'Sparkles',
+    lessonCount: 12,
+    status: 'available',
+  },
+];

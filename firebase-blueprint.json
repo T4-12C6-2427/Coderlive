@@ -1,0 +1,203 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Thông tin hồ sơ, tùy chọn và cài đặt người dùng",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "lastLoginAt": { "type": "string" }
+      },
+      "required": ["userId"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Dự án mã nguồn HTML/CSS/JS được lưu",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 300 },
+        "languages": { "type": "array", "items": { "type": "string" } },
+        "htmlCode": { "type": "string", "maxLength": 500000 },
+        "cssCode": { "type": "string", "maxLength": 200000 },
+        "jsCode": { "type": "string", "maxLength": 200000 },
+        "isShared": { "type": "boolean" },
+        "sharedAt": { "type": "string" },
+        "authorEmail": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title"]
+    },
+    "LearningProgress": {
+      "title": "LearningProgress",
+      "description": "Tiến trình học tập lập trình của người dùng",
+      "type": "object",
+      "properties": {
+        "completedLessons": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "courseId": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "CollabProject": {
+      "title": "CollabProject",
+      "description": "Dự án nhóm cộng tác thời gian thực sử dụng Yjs CRDT",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 300 },
+        "languages": { "type": "array", "items": { "type": "string" } },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "members": { "type": "object" },
+        "memberProfiles": { "type": "object" },
+        "inviteEnabled": { "type": "boolean" },
+        "inviteToken": { "type": "string", "maxLength": 128 },
+        "inviteRole": { "type": "string", "enum": ["editor", "viewer"] },
+        "inviteTokenUsed": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "ownerId", "members", "memberProfiles", "inviteEnabled", "inviteToken", "inviteRole", "createdAt", "updatedAt"]
+    },
+    "CollabUpdateChunk": {
+      "title": "CollabUpdateChunk",
+      "description": "Gói cập nhật Yjs CRDT được đồng bộ theo đợt",
+      "type": "object",
+      "properties": {
+        "updateBase64": { "type": "string" },
+        "authorId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["updateBase64", "authorId", "createdAt"]
+    },
+    "CollabSnapshot": {
+      "title": "CollabSnapshot",
+      "description": "Bản chụp trạng thái nén của tài liệu Yjs",
+      "type": "object",
+      "properties": {
+        "stateBase64": { "type": "string" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["stateBase64", "updatedBy", "updatedAt"]
+    },
+    "CollabInvite": {
+      "title": "CollabInvite",
+      "description": "Mã thông báo lời mời dự án nhóm (chỉ đọc theo đúng token bí mật)",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string", "maxLength": 128 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "inviteRole": { "type": "string", "enum": ["editor", "viewer"] },
+        "inviteEnabled": { "type": "boolean" },
+        "projectTitle": { "type": "string", "maxLength": 60 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["projectId", "ownerId", "inviteRole", "inviteEnabled", "updatedAt"]
+    },
+    "CollabLineComment": {
+      "title": "CollabLineComment",
+      "description": "Chuỗi bình luận gắn theo dòng mã trong dự án nhóm",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "tab": { "type": "string", "enum": ["html", "css", "js"] },
+        "lineNumber": { "type": "integer" },
+        "relPosJson": { "type": ["string", "null"], "maxLength": 2000 },
+        "authorId": { "type": "string", "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 100 },
+        "authorColor": { "type": "string", "maxLength": 20 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "resolved": { "type": "boolean" },
+        "resolvedByName": { "type": ["string", "null"], "maxLength": 100 },
+        "resolvedAt": { "type": ["string", "null"], "maxLength": 64 },
+        "replies": { "type": "array", "items": { "type": "object" } },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "projectId", "tab", "lineNumber", "authorId", "authorName", "authorColor", "text", "resolved", "replies", "createdAt", "updatedAt"]
+    },
+    "CollabChatMessage": {
+      "title": "CollabChatMessage",
+      "description": "Tin nhắn trò chuyện ngắn trong dự án nhóm",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "authorId": { "type": "string", "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 100 },
+        "authorColor": { "type": "string", "maxLength": 20 },
+        "photoURL": { "type": ["string", "null"], "maxLength": 1024 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "projectId", "authorId", "authorName", "authorColor", "text", "createdAt"]
+    },
+    "CollabPreviewState": {
+      "title": "CollabPreviewState",
+      "description": "Trạng thái chế độ xem trước đồng bộ tùy chọn giữa các thành viên",
+      "type": "object",
+      "properties": {
+        "device": { "type": "string", "enum": ["desktop", "tablet", "mobile"] },
+        "refreshNonce": { "type": "integer" },
+        "updatedByUid": { "type": "string", "maxLength": 128 },
+        "updatedByName": { "type": "string", "maxLength": 100 },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["device", "refreshNonce", "updatedByUid", "updatedByName", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Tài liệu hồ sơ và cài đặt giao diện người dùng"
+    },
+    "/users/{userId}/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Danh sách các dự án mã nguồn của người dùng"
+    },
+    "/users/{userId}/learning/{docId}": {
+      "schema": "LearningProgress",
+      "description": "Tiến trình học tập theo từng khóa học"
+    },
+    "/collabProjects/{projectId}": {
+      "schema": "CollabProject",
+      "description": "Siêu dữ liệu, thành viên, vai trò và cấu hình lời mời của dự án nhóm"
+    },
+    "/collabProjects/{projectId}/updates/{updateId}": {
+      "schema": "CollabUpdateChunk",
+      "description": "Chuỗi gói cập nhật Yjs CRDT"
+    },
+    "/collabProjects/{projectId}/snapshots/{snapshotId}": {
+      "schema": "CollabSnapshot",
+      "description": "Ảnh chụp trạng thái Yjs đã được nén"
+    },
+    "/collabProjects/{projectId}/comments/{commentId}": {
+      "schema": "CollabLineComment",
+      "description": "Chuỗi bình luận gắn theo dòng mã trong dự án nhóm"
+    },
+    "/collabProjects/{projectId}/messages/{messageId}": {
+      "schema": "CollabChatMessage",
+      "description": "Tin nhắn trò chuyện ngắn giữa các thành viên dự án nhóm"
+    },
+    "/collabProjects/{projectId}/state/{stateId}": {
+      "schema": "CollabPreviewState",
+      "description": "Trạng thái đồng bộ chế độ xem trước của dự án nhóm"
+    },
+    "/collabInvites/{inviteToken}": {
+      "schema": "CollabInvite",
+      "description": "Tra cứu liên kết mời dự án nhóm theo token bí mật"
+    }
+  }
+}

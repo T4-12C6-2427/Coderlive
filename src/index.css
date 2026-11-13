@@ -1,0 +1,808 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* Fonts */
+  --font-sans: 'Be Vietnam Pro', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Default Dark Tokens (Fallback before theme engine initializes) */
+  --bg-app: #090b14;
+  --bg-app-rgb: 9, 11, 20;
+  --bg-panel: #0f1322;
+  --bg-panel-rgb: 15, 19, 34;
+  --bg-elevated: #171c32;
+  --bg-elevated-rgb: 23, 28, 50;
+  --bg-overlay: rgba(0, 0, 0, 0.72);
+  --bg-input: #13182b;
+  --bg-input-rgb: 19, 24, 43;
+  --bg-hover: rgba(99, 102, 241, 0.10);
+  --bg-active: rgba(99, 102, 241, 0.18);
+  --bg-selected: rgba(99, 102, 241, 0.22);
+
+  --text-primary: #f1f5f9;
+  --text-primary-rgb: 241, 245, 249;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-disabled: #4b5563;
+  --text-on-accent: #ffffff;
+  --text-link: #6366f1;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.11);
+  --border-strong: rgba(255, 255, 255, 0.20);
+  --border-focus: #6366f1;
+
+  --accent: #6366f1;
+  --accent-base: #6366f1;
+  --accent-rgb: 99, 102, 241;
+  --accent-hover: #4f46e5;
+  --accent-active: #4338ca;
+  --accent-soft: rgba(99, 102, 241, 0.16);
+  --accent-border: rgba(99, 102, 241, 0.35);
+  --accent-text: #6366f1;
+  --accent-2: #a855f7;
+  --accent-2-rgb: 168, 85, 247;
+
+  --color-success: #10b981;
+  --color-success-rgb: 16, 185, 129;
+  --color-success-soft: rgba(16, 185, 129, 0.16);
+  --color-warning: #f59e0b;
+  --color-warning-rgb: 245, 158, 11;
+  --color-warning-soft: rgba(245, 158, 11, 0.16);
+  --color-danger: #ef4444;
+  --color-danger-rgb: 239, 68, 68;
+  --color-danger-soft: rgba(239, 68, 68, 0.16);
+  --color-info: #0ea5e9;
+  --color-info-rgb: 14, 165, 233;
+  --color-info-soft: rgba(14, 165, 233, 0.16);
+
+  /* Course Badge Theme Tokens */
+  --course-html: #ea580c;
+  --course-html-soft: rgba(234, 88, 12, 0.16);
+  --course-html-border: rgba(234, 88, 12, 0.35);
+  --course-html-text: #f97316;
+
+  --course-css: #0284c7;
+  --course-css-soft: rgba(2, 132, 199, 0.16);
+  --course-css-border: rgba(2, 132, 199, 0.35);
+  --course-css-text: #38bdf8;
+
+  --course-js: #d97706;
+  --course-js-soft: rgba(217, 119, 6, 0.16);
+  --course-js-border: rgba(217, 119, 6, 0.35);
+  --course-js-text: #fbbf24;
+
+  --code-bg: #0b0e1b;
+  --code-gutter: #080a13;
+  --code-selection: rgba(99, 102, 241, 0.28);
+  --code-line-highlight: rgba(99, 102, 241, 0.08);
+  --code-font-size: 13.5px;
+  --code-line-height: 1.6;
+
+  --syn-keyword: #c084fc;
+  --syn-tag: #f43f5e;
+  --syn-attr: #38bdf8;
+  --syn-string: #34d399;
+  --syn-number: #fbbf24;
+  --syn-function: #60a5fa;
+  --syn-comment: #64748b;
+  --syn-property: #38bdf8;
+  --syn-value: #f472b6;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+
+  --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.25);
+  --shadow-elevated: 0 8px 28px -4px rgba(0, 0, 0, 0.45), 0 2px 8px -1px rgba(0, 0, 0, 0.3);
+  --shadow-overlay: 0 24px 48px -10px rgba(0, 0, 0, 0.75);
+
+  --density-scale: 1.0;
+  --header-height: 48px;
+
+  /* Mobile & Responsive Viewport + Safe Area Tokens */
+  --app-height: 100dvh;
+  --vv-offset-top: 0px;
+  --keyboard-height: 0px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /* Fluid Type Scale (16px minimum body floor on mobile/touch) */
+  --text-xs-fluid: clamp(0.75rem, 0.72rem + 0.14vw, 0.8125rem);
+  --text-sm-fluid: clamp(0.875rem, 0.84rem + 0.16vw, 0.9375rem);
+  --text-body-fluid: clamp(1rem, 0.975rem + 0.15vw, 1.0625rem);
+  --text-h3-fluid: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  --text-h2-fluid: clamp(1.25rem, 1.1rem + 0.75vw, 1.625rem);
+  --text-h1-fluid: clamp(1.5rem, 1.25rem + 1.25vw, 2.125rem);
+  --reading-measure: 68ch;
+}
+
+@layer base {
+  html, body {
+    background-color: transparent !important;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+  #root {
+    background-color: transparent !important;
+    max-width: 100%;
+    overflow-x: clip;
+    min-height: 100vh;
+    min-height: 100dvh;
+    min-height: var(--app-height, 100dvh);
+  }
+  body {
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+    caret-color: var(--accent);
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+  code, pre, .cm-editor, .cm-scroller {
+    font-family: var(--font-mono) !important;
+  }
+  button,
+  a,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="switch"],
+  summary,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* 200ms Smooth Theme Cross-fade (Disabled on reduced motion) */
+@media (prefers-reduced-motion: no-preference) {
+  html, body, button, input, select, textarea {
+    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* Caret & Text Selection */
+::selection {
+  background-color: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* Design Token Utility Classes with Translucency Support */
+.bg-app {
+  background-color: var(--bg-app-surface, var(--bg-app));
+}
+.bg-panel {
+  background-color: var(--bg-panel-translucent, var(--bg-panel));
+}
+.bg-elevated {
+  background-color: var(--bg-elevated-translucent, var(--bg-elevated));
+}
+.bg-editor-area {
+  background-color: var(--bg-editor-surface, var(--bg-app));
+}
+.bg-overlay { background-color: var(--bg-overlay); }
+.bg-input { background-color: var(--bg-input); }
+.bg-hover { background-color: var(--bg-hover); }
+.bg-active { background-color: var(--bg-active); }
+.bg-selected { background-color: var(--bg-selected); }
+
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-muted { color: var(--text-muted); }
+.text-disabled { color: var(--text-disabled); }
+.text-link { color: var(--text-link); }
+
+.border-subtle { border-color: var(--border-subtle); }
+.border-default { border-color: var(--border-default); }
+.border-strong { border-color: var(--border-strong); }
+.border-focus { border-color: var(--border-focus); }
+
+/* Accent Driven Utilities */
+.bg-accent { background-color: var(--accent); }
+.bg-accent-active:active { background-color: var(--accent-active); }
+@media (hover: hover) and (pointer: fine) {
+  .bg-accent-hover:hover { background-color: var(--accent-hover); }
+}
+.bg-accent-soft { background-color: var(--accent-soft); }
+.bg-accent-border { background-color: var(--accent-border); }
+.text-accent { color: var(--accent); }
+.text-accent-on { color: var(--text-on-accent); }
+.border-accent { border-color: var(--accent); }
+.border-accent-border { border-color: var(--accent-border); }
+.ring-accent { --tw-ring-color: var(--accent); }
+
+/* Secondary Accent for Gradients */
+.bg-accent-2 { background-color: var(--accent-2); }
+.text-accent-2 { color: var(--accent-2); }
+
+/* Semantic Status Utilities */
+.bg-success { background-color: var(--color-success); }
+.bg-success-soft { background-color: var(--color-success-soft); }
+.text-success { color: var(--color-success); }
+.border-success { border-color: var(--color-success); }
+
+.bg-warning { background-color: var(--color-warning); }
+.bg-warning-soft { background-color: var(--color-warning-soft); }
+.text-warning { color: var(--color-warning); }
+.border-warning { border-color: var(--color-warning); }
+
+.bg-danger { background-color: var(--color-danger); }
+.bg-danger-soft { background-color: var(--color-danger-soft); }
+.text-danger { color: var(--color-danger); }
+.border-danger { border-color: var(--color-danger); }
+
+.bg-info { background-color: var(--color-info); }
+.bg-info-soft { background-color: var(--color-info-soft); }
+.text-info { color: var(--color-info); }
+.border-info { border-color: var(--color-info); }
+
+.rounded-token-xs { border-radius: var(--radius-xs); }
+.rounded-token-sm { border-radius: var(--radius-sm); }
+.rounded-token-md { border-radius: var(--radius-md); }
+.rounded-token-lg { border-radius: var(--radius-lg); }
+.rounded-token-xl { border-radius: var(--radius-xl); }
+.rounded-token-full { border-radius: var(--radius-full); }
+
+.glass-panel {
+  background-color: var(--bg-elevated-translucent, var(--bg-elevated));
+  backdrop-filter: var(--panel-backdrop-filter, blur(16px));
+  -webkit-backdrop-filter: var(--panel-backdrop-filter, blur(16px));
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-panel {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+@media (max-width: 767px) and (pointer: coarse) {
+  .glass-panel {
+    backdrop-filter: var(--panel-backdrop-filter, blur(8px));
+    -webkit-backdrop-filter: var(--panel-backdrop-filter, blur(8px));
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 9999px;
+}
+@media (hover: hover) and (pointer: fine) {
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+  }
+}
+
+/* CodeMirror Dynamic Token Integration */
+.cm-editor {
+  height: 100% !important;
+  font-size: var(--code-font-size) !important;
+  line-height: var(--code-line-height) !important;
+  background-color: transparent !important;
+  color: var(--text-primary) !important;
+}
+.cm-editor .cm-scroller {
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background-color: var(--code-bg-translucent, var(--code-bg)) !important;
+  color: var(--text-primary) !important;
+}
+.cm-editor.cm-focused {
+  outline: none !important;
+}
+.cm-gutters {
+  background-color: var(--code-gutter-translucent, var(--code-gutter)) !important;
+  color: var(--text-muted) !important;
+  border-right: 1px solid var(--border-subtle) !important;
+}
+.cm-activeLineGutter {
+  background-color: var(--bg-hover) !important;
+  color: var(--accent) !important;
+  font-weight: 600 !important;
+}
+.cm-activeLine {
+  background-color: var(--code-line-highlight) !important;
+}
+.cm-cursor {
+  border-left-color: var(--accent) !important;
+  border-left-width: 2px !important;
+}
+.cm-selectionBackground, .cm-editor ::selection {
+  background-color: var(--code-selection) !important;
+}
+
+/* CodeMirror Syntax Tokens */
+.cm-editor .tok-keyword { color: var(--syn-keyword) !important; font-weight: 600; }
+.cm-editor .tok-tag { color: var(--syn-tag) !important; font-weight: 600; }
+.cm-editor .tok-attributeName { color: var(--syn-attr) !important; }
+.cm-editor .tok-string { color: var(--syn-string) !important; }
+.cm-editor .tok-number { color: var(--syn-number) !important; }
+.cm-editor .tok-variableName { color: var(--text-primary) !important; }
+.cm-editor .tok-function { color: var(--syn-function) !important; }
+.cm-editor .tok-comment { color: var(--syn-comment) !important; font-style: italic; }
+.cm-editor .tok-propertyName { color: var(--syn-property) !important; }
+.cm-editor .tok-typeName { color: var(--syn-value) !important; }
+.cm-editor .tok-operator { color: var(--accent) !important; }
+
+/* Collaborative Presence (Remote Carets, Labels, Gutter Dots & Insert Flash) */
+.cm-collab-caret {
+  position: relative;
+  display: inline;
+  border-left: 2px solid;
+  margin-left: -1px;
+  margin-right: -1px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  z-index: 20;
+}
+
+.cm-collab-caret::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: -6px;
+  right: -6px;
+  pointer-events: auto;
+}
+
+.cm-collab-caret-dot {
+  position: absolute;
+  top: -3px;
+  left: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  pointer-events: none;
+  transition: transform 180ms ease;
+}
+
+.cm-collab-caret-label {
+  position: absolute;
+  top: -1.45em;
+  left: -2px;
+  padding: 1px 6px;
+  border-radius: 4px 4px 4px 1px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  z-index: 40;
+  transition: opacity 260ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cm-collab-caret-top .cm-collab-caret-label {
+  top: 1.35em;
+  border-radius: 1px 4px 4px 4px;
+}
+
+.cm-collab-caret-active .cm-collab-caret-label {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cm-collab-caret-idle .cm-collab-caret-label {
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cm-collab-caret:hover .cm-collab-caret-label {
+    opacity: 1 !important;
+    transform: translateY(0);
+  }
+
+  .cm-collab-caret:hover .cm-collab-caret-dot {
+    transform: scale(0.75);
+  }
+}
+
+.cm-collab-selection {
+  border-radius: 2px;
+}
+
+.cm-collab-presence-gutter {
+  width: 14px;
+  min-width: 14px;
+}
+
+.cm-collab-presence-gutter .cm-gutterElement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+}
+
+.cm-collab-gutter-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5px;
+  cursor: help;
+}
+
+.cm-collab-gutter-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+@keyframes collabInsertFlash {
+  0% {
+    background-color: var(--collab-flash-bg, rgba(99, 102, 241, 0.28));
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.cm-collab-insert-flash {
+  border-radius: 2px;
+  animation: collabInsertFlash 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes jumpFlashLine {
+  0% {
+    background-color: var(--color-success-soft);
+  }
+  70% {
+    background-color: var(--color-success-soft);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.cm-jump-flash-line {
+  animation: jumpFlashLine 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-collab-caret-label {
+    transition: none;
+  }
+  .cm-collab-insert-flash {
+    animation: none;
+    background-color: var(--collab-flash-bg, rgba(99, 102, 241, 0.16));
+  }
+}
+
+/* Line Comment Gutter & Clickable Line Numbers (Stage 4) */
+.cm-collab-editor .cm-lineNumbers .cm-gutterElement {
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cm-collab-editor .cm-lineNumbers .cm-gutterElement:hover {
+    color: var(--accent) !important;
+  }
+}
+
+.cm-collab-comment-gutter {
+  width: 18px;
+  min-width: 18px;
+}
+
+.cm-collab-comment-gutter .cm-gutterElement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1px;
+}
+
+.cm-collab-comment-badge {
+  width: 15px;
+  height: 15px;
+  border-radius: 9999px;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  transition: transform 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cm-collab-comment-badge:hover {
+    transform: scale(1.12);
+  }
+}
+
+.cm-collab-comment-open {
+  background-color: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.cm-collab-comment-resolved {
+  background-color: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+/* ============================================================================
+   MOBILE & TOUCH-FIRST FOUNDATIONS (STAGE 1)
+   ============================================================================ */
+
+/* Dynamic Viewport Height Helpers (100vh fallback -> 100dvh -> --app-height) */
+.h-viewport {
+  height: 100vh;
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
+}
+.min-h-viewport {
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
+}
+.max-h-viewport-92 {
+  max-height: 92vh;
+  max-height: 92dvh;
+  max-height: calc(var(--app-height, 100dvh) * 0.92 - var(--safe-top) - var(--safe-bottom));
+}
+.max-h-viewport-90 {
+  max-height: 90vh;
+  max-height: 90dvh;
+  max-height: calc(var(--app-height, 100dvh) * 0.9 - var(--safe-top) - var(--safe-bottom));
+}
+.max-h-viewport-88 {
+  max-height: 88vh;
+  max-height: 88dvh;
+  max-height: calc(var(--app-height, 100dvh) * 0.88 - var(--safe-top) - var(--safe-bottom));
+}
+.max-h-viewport-85 {
+  max-height: 85vh;
+  max-height: 85dvh;
+  max-height: calc(var(--app-height, 100dvh) * 0.85 - var(--safe-top) - var(--safe-bottom));
+}
+.max-h-viewport-70 {
+  max-height: 70vh;
+  max-height: 70dvh;
+  max-height: calc(var(--app-height, 100dvh) * 0.7 - var(--safe-top));
+}
+
+/* Safe-Area Insets */
+.pt-safe { padding-top: var(--safe-top); }
+.pb-safe { padding-bottom: var(--safe-bottom); }
+.pl-safe { padding-left: var(--safe-left); }
+.pr-safe { padding-right: var(--safe-right); }
+.px-safe {
+  padding-left: max(0.75rem, var(--safe-left));
+  padding-right: max(0.75rem, var(--safe-right));
+}
+
+/* Fluid Reading Typography Helpers */
+.text-fluid-body {
+  font-size: var(--text-body-fluid);
+  line-height: 1.65;
+}
+.text-fluid-h1 { font-size: var(--text-h1-fluid); line-height: 1.2; }
+.text-fluid-h2 { font-size: var(--text-h2-fluid); line-height: 1.25; }
+.text-fluid-h3 { font-size: var(--text-h3-fluid); line-height: 1.3; }
+.prose-measure { max-width: var(--reading-measure); }
+
+/* Overscroll containment for internal scrollers */
+.overscroll-contain,
+[role="dialog"] [class*="overflow-y-auto"],
+aside [class*="overflow-y-auto"] {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide scrollbars while preserving touch horizontal scroll */
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Touch Device Ergonomics: 44x44px minimum hitboxes, >=8px gaps, pressed feedback, no iOS zoom */
+@media (hover: none), (pointer: coarse) {
+  .shortcut-hint {
+    display: none !important;
+  }
+  .touch-only-hint {
+    display: inline !important;
+  }
+
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .touch-target-h {
+    min-height: 44px;
+  }
+
+  .touch-gap {
+    gap: max(0.5rem, 8px);
+  }
+
+  .touch-hit-expand {
+    position: relative;
+  }
+  .touch-hit-expand::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 44px;
+    min-height: 44px;
+    z-index: 1;
+  }
+
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  [role="tab"]:active,
+  [role="menuitem"]:active {
+    transform: scale(0.97);
+    opacity: 0.88;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible,
+  [role="tab"]:focus-visible,
+  [role="menuitem"]:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+}
+
+/* Apply same ergonomics whenever html.is-touch is synced by useViewport */
+html.is-touch .shortcut-hint {
+  display: none !important;
+}
+html.is-touch .touch-only-hint {
+  display: inline !important;
+}
+html.is-touch .touch-target {
+  min-width: 44px;
+  min-height: 44px;
+}
+html.is-touch .touch-target-h {
+  min-height: 44px;
+}
+html.is-touch .touch-gap {
+  gap: max(0.5rem, 8px);
+}
+html.is-touch .touch-hit-expand {
+  position: relative;
+}
+html.is-touch .touch-hit-expand::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 44px;
+  min-height: 44px;
+  z-index: 1;
+}
+
+/* Minimum 16px body text & 16px input font-size on mobile / touch devices to prevent iOS auto-zoom */
+@media (hover: none), (pointer: coarse), (max-width: 767px) {
+  body {
+    font-size: max(16px, var(--text-body-fluid));
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]),
+  textarea,
+  select {
+    font-size: max(16px, 1rem) !important;
+  }
+}
+
+html.is-touch body {
+  font-size: max(16px, var(--text-body-fluid));
+}
+
+html.is-touch input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]),
+html.is-touch textarea,
+html.is-touch select {
+  font-size: max(16px, 1rem) !important;
+}
+
+/* Touch ergonomics for CodeMirror & Range Sliders */
+@media (hover: none), (pointer: coarse) {
+  .cm-collab-editor .cm-lineNumbers .cm-gutterElement {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  .cm-collab-comment-badge {
+    position: relative;
+  }
+  .cm-collab-comment-badge::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  input[type="range"] {
+    min-height: 36px;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+html.is-touch .cm-collab-editor .cm-lineNumbers .cm-gutterElement {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+html.is-touch .cm-collab-comment-badge {
+  position: relative;
+}
+html.is-touch .cm-collab-comment-badge::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 44px;
+  min-height: 44px;
+}
+
+@media (hover: none) and (max-width: 767px), (pointer: coarse) and (max-width: 767px) {
+  .cm-editor,
+  .cm-editor .cm-content {
+    font-size: max(16px, var(--code-font-size, 16px)) !important;
+  }
+}
+
+/* Yield extra vertical coding lines when virtual keyboard opens on short / landscape phones */
+@media (max-height: 520px) {
+  html.keyboard-open .editor-status-footer {
+    display: none;
+  }
+}
+
