@@ -1,8 +1,9 @@
 export const MAX_BG_IMAGE_BYTES = 15 * 1024 * 1024; // 15 MB
-const DB_NAME = 'htmlive_custom_bg_db_v1';
+const DB_NAME = 'coderlive_custom_bg_db_v1';
+const LEGACY_DB_NAME = 'htmlive_custom_bg_db_v1';
 const STORE_NAME = 'images';
-const LS_FALLBACK_KEY = 'htmlive_custom_bg_fallback_v1';
-const BG_IMAGE_EVENT = 'htmlive-bg-image-updated';
+const LS_FALLBACK_KEY = 'coderlive_custom_bg_fallback_v1';
+const BG_IMAGE_EVENT = 'coderlive-bg-image-updated';
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/png',
@@ -82,13 +83,13 @@ export function validateBgImageFile(file: File): string | null {
   return null;
 }
 
-function openBgDatabase(): Promise<IDBDatabase> {
+function openBgDatabase(dbName: string = DB_NAME): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
       reject(new Error('IndexedDB không khả dụng'));
       return;
     }
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(dbName, 1);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -106,7 +107,7 @@ async function saveBlobToIndexedDb(
   info: { name: string; size: number; type: string; width?: number; height?: number }
 ): Promise<boolean> {
   try {
-    const db = await openBgDatabase();
+    const db = await openBgDatabase(DB_NAME);
     return await new Promise<boolean>((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
@@ -136,11 +137,12 @@ async function saveBlobToIndexedDb(
   }
 }
 
-async function loadBlobFromIndexedDb(
+async function loadBlobFromSingleIndexedDb(
+  dbName: string,
   id: string
 ): Promise<{ blob: Blob; name: string; size: number; type: string; width?: number; height?: number } | null> {
   try {
-    const db = await openBgDatabase();
+    const db = await openBgDatabase(dbName);
     return await new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
@@ -169,6 +171,27 @@ async function loadBlobFromIndexedDb(
   } catch {
     return null;
   }
+}
+
+async function loadBlobFromIndexedDb(
+  id: string
+): Promise<{ blob: Blob; name: string; size: number; type: string; width?: number; height?: number } | null> {
+  const current = await loadBlobFromSingleIndexedDb(DB_NAME, id);
+  if (current) return current;
+
+  // Tương thích ngược: đọc từ DB cũ và sao chép sang DB mới nếu tìm thấy
+  const legacy = await loadBlobFromSingleIndexedDb(LEGACY_DB_NAME, id);
+  if (legacy) {
+    await saveBlobToIndexedDb(id, legacy.blob, {
+      name: legacy.name,
+      size: legacy.size,
+      type: legacy.type,
+      width: legacy.width,
+      height: legacy.height,
+    });
+    return legacy;
+  }
+  return null;
 }
 
 async function clearIndexedDb(): Promise<void> {

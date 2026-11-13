@@ -12,7 +12,7 @@ import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Project } from '../types';
 import { migrateProjectCode } from '../lib/codeCompiler';
 
-const GUEST_PROJECTS_KEY = 'htmlive_guest_projects_v1';
+const GUEST_PROJECTS_KEY = 'coderlive_guest_projects_v1';
 
 /**
  * Lấy danh sách dự án của người dùng khách (Guest) từ localStorage

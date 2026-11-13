@@ -7,3 +7,4 @@ export * from './Controls';
 export * from './Modal';
 export * from './Drawer';
 export * from './Feedback';
+export * from './Dropdown';

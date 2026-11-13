@@ -70,7 +70,7 @@ function runCheck() {
   const rel = (p) => path.relative(path.resolve(__dirname, '..'), p);
 
   console.log('----------------------------------------------------');
-  console.log('🎨 Kiểm Tra Mã Màu Cứng (HTMLive Token Linter)');
+  console.log('🎨 Kiểm Tra Mã Màu Cứng (Coderlive Token Linter)');
   console.log('----------------------------------------------------');
 
   if (totalViolations === 0) {

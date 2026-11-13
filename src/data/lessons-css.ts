@@ -780,7 +780,7 @@ export const CSS_LESSONS: Lesson[] = [
 </style>
 
 <nav class="thanh-dieu-huong">
-  <div class="logo">⚡ HTMLive</div>
+  <div class="logo">⚡ Coderlive</div>
   <div class="menu-links">
     <a href="#">Trang chủ</a>
     <a href="#">Khóa học</a>
@@ -986,7 +986,7 @@ export const CSS_LESSONS: Lesson[] = [
 
 <div style="text-align: center; padding: 20px;">
   <button class="nut-trai-tim">
-    ❤️ Yêu thích HTMLive
+    ❤️ Yêu thích Coderlive
   </button>
 </div>`,
     lineNotes: [

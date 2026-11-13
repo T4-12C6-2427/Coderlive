@@ -23,7 +23,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('[HTMLLive ErrorBoundary] Uncaught error:', error, errorInfo);
+    console.error('[Coderlive ErrorBoundary] Uncaught error:', error, errorInfo);
   }
 
   private handleRetry = () => {

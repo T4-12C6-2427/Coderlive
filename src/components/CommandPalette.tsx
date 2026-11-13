@@ -13,18 +13,14 @@ import {
   Share2,
   Columns,
   Rows,
-  Maximize2,
   Sun,
   Moon,
   Palette,
   GraduationCap,
   FileCode2,
-  Check,
   ChevronRight,
-  Eye,
-  Minimize2,
   Sidebar,
-  Code2
+  Gauge
 } from 'lucide-react';
 import { Kbd } from './ui/Kbd';
 import { Project, WorkspacePreset } from '../types';
@@ -44,6 +40,8 @@ export interface CommandPaletteProps {
   onClear: () => void;
   onToggleTheme: () => void;
   theme: 'dark' | 'light';
+  onToggleFps?: () => void;
+  isFpsVisible?: boolean;
   onSetWorkspacePreset: (preset: WorkspacePreset) => void;
   activePreset: WorkspacePreset;
   onToggleActivityBar: () => void;
@@ -54,6 +52,7 @@ export interface CommandPaletteProps {
   onOpenLearn: (lessonSlug?: string) => void;
   projects?: Project[];
   onSelectProject?: (project: Project) => void;
+  isCodeEmpty?: boolean;
 }
 
 interface CommandItem {
@@ -64,6 +63,8 @@ interface CommandItem {
   shortcut?: string;
   action: () => void;
   keywords?: string[];
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -79,6 +80,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onClear,
   onToggleTheme,
   theme,
+  onToggleFps,
+  isFpsVisible,
   onSetWorkspacePreset,
   activePreset,
   onToggleActivityBar,
@@ -89,6 +92,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onOpenLearn,
   projects = [],
   onSelectProject,
+  isCodeEmpty = false,
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -154,15 +158,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         shortcut: 'Ctrl+Shift+C',
         action: onCopy,
         keywords: ['copy', 'sao chep', 'clipboard'],
+        disabled: isCodeEmpty,
+        disabledReason: isCodeEmpty ? 'Chưa có code' : undefined,
       },
       {
         id: 'cmd-download',
         title: 'Tải xuống tệp HTML (.html/.htm)',
         category: 'actions',
         icon: <Download className="w-4 h-4 text-muted" strokeWidth={1.5} />,
-        shortcut: 'Ctrl+Shift+D',
         action: onDownload,
         keywords: ['download', 'tai ve', 'export', 'xuat file'],
+        disabled: isCodeEmpty,
+        disabledReason: isCodeEmpty ? 'Chưa có code' : undefined,
       },
       {
         id: 'cmd-clear',
@@ -189,31 +196,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <Rows className="w-4 h-4 text-muted" strokeWidth={1.5} />,
         action: () => onSetWorkspacePreset('split-vertical'),
         keywords: ['chia doc', 'vertical', 'tren duoi', 'stacked'],
-      },
-      {
-        id: 'layout-focus-code',
-        title: 'Bố cục: Tập trung Code (Mở rộng trình soạn thảo)',
-        category: 'layout',
-        icon: <Code2 className="w-4 h-4 text-accent" strokeWidth={1.5} />,
-        action: () => onSetWorkspacePreset('focus-code'),
-        keywords: ['focus code', 'tap trung code', 'editor only'],
-      },
-      {
-        id: 'layout-focus-preview',
-        title: 'Bố cục: Tập trung Xem trước (Toàn màn hình Preview)',
-        category: 'layout',
-        icon: <Eye className="w-4 h-4 text-accent" strokeWidth={1.5} />,
-        action: () => onSetWorkspacePreset('focus-preview'),
-        keywords: ['focus preview', 'toan man hinh', 'fullscreen'],
-      },
-      {
-        id: 'layout-zen',
-        title: 'Chế độ Zen (Tối giản không xao nhãng)',
-        category: 'layout',
-        icon: <Maximize2 className="w-4 h-4 text-accent" strokeWidth={1.5} />,
-        shortcut: 'Ctrl+Shift+Z / F11',
-        action: () => onSetWorkspacePreset('zen'),
-        keywords: ['zen', 'distraction free', 'toi gian'],
       },
       {
         id: 'layout-toggle-activity',
@@ -267,6 +249,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         keywords: ['hoc', 'learn', 'khoa hoc', 'html', 'css', 'js'],
       },
     ];
+
+    if (onToggleFps) {
+      list.push({
+        id: 'theme-toggle-fps',
+        title: isFpsVisible ? 'Bật/tắt FPS: Đang hiện FPS (Bấm để ẩn)' : 'Bật/tắt FPS: Đang ẩn FPS (Bấm để hiện)',
+        category: 'theme',
+        icon: <Gauge className="w-4 h-4 text-success" strokeWidth={1.5} />,
+        action: onToggleFps,
+        keywords: ['fps', 'hieu nang', 'toc do khung hinh', 'bat tat fps'],
+      });
+    }
 
     if (onShare) {
       list.push({
@@ -328,6 +321,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onShare,
     onToggleTheme,
     theme,
+    onToggleFps,
+    isFpsVisible,
     onSetWorkspacePreset,
     onToggleActivityBar,
     isActivityBarVisible,
@@ -337,6 +332,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onOpenLearn,
     projects,
     onSelectProject,
+    isCodeEmpty,
   ]);
 
   // Filter commands by search query
@@ -366,8 +362,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % Math.max(1, filteredCommands.length));
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (filteredCommands[selectedIndex]) {
-          filteredCommands[selectedIndex].action();
+        const chosen = filteredCommands[selectedIndex];
+        if (chosen && !chosen.disabled) {
+          chosen.action();
           onClose();
         }
       }
@@ -463,15 +460,20 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     <button
                       key={cmd.id}
                       data-selected={isSelected}
+                      disabled={cmd.disabled}
+                      title={cmd.disabled ? cmd.disabledReason : undefined}
                       onClick={() => {
+                        if (cmd.disabled) return;
                         cmd.action();
                         onClose();
                       }}
                       onMouseEnter={() => setSelectedIndex(index)}
-                      className={`touch-target-h w-full flex items-center justify-between px-3 py-2 rounded-[var(--radius-sm)] text-xs transition-colors cursor-pointer text-left ${
-                        isSelected
-                          ? 'bg-accent-soft text-accent font-medium'
-                          : 'text-primary hover:bg-[var(--border-subtle)]'
+                      className={`touch-target-h w-full flex items-center justify-between px-3 py-2 rounded-[var(--radius-sm)] text-xs transition-colors text-left ${
+                        cmd.disabled
+                          ? 'text-muted opacity-50 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-accent-soft text-accent font-medium cursor-pointer'
+                          : 'text-primary hover:bg-[var(--border-subtle)] cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -479,7 +481,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         <span className="truncate">{cmd.title}</span>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                        {cmd.shortcut && <Kbd>{cmd.shortcut}</Kbd>}
+                        {cmd.disabled && cmd.disabledReason ? (
+                          <span className="text-[10px] text-muted">{cmd.disabledReason}</span>
+                        ) : (
+                          cmd.shortcut && <Kbd>{cmd.shortcut}</Kbd>
+                        )}
                         <ChevronRight className="w-3.5 h-3.5 text-muted opacity-60" strokeWidth={1.5} />
                       </div>
                     </button>
@@ -500,7 +506,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               <Kbd>↵</Kbd> chọn lệnh
             </span>
           </div>
-          <span>HTMLive PRO Workspace</span>
+          <span>Coderlive PRO Workspace</span>
         </div>
       </div>
     </div>,

@@ -91,7 +91,7 @@ export const LESSONS: Lesson[] = [
       'Văn bản là yếu tố cốt lõi truyền tải thông điệp trên web. HTML cung cấp 6 cấp độ tiêu đề từ <h1> (quan trọng nhất, to nhất) đến <h6> (nhỏ nhất) giúp phân cấp cấu trúc thông tin rõ ràng cho người đọc và công cụ tìm kiếm (SEO). Ngoài ra, thẻ <p> được dùng cho các đoạn văn thông thường.',
     analogy:
       'Ví von: Giống như một cuốn sách, <h1> là tên cuốn sách, <h2> là tên chương, <h3> là tên mục nhỏ trong chương, và <p> là nội dung từng trang sách.',
-    initialCode: `<h1>Học Lập Trình Web Cùng HTMLive</h1>
+    initialCode: `<h1>Học Lập Trình Web Cùng Coderlive</h1>
 <p>HTML rất dễ học và thú vị khi bạn được nhìn thấy kết quả ngay lập tức.</p>
 
 <hr>
@@ -290,8 +290,8 @@ export const LESSONS: Lesson[] = [
 
 <p>Hình ảnh từ đường dẫn placeholder:</p>
 <img 
-  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='120' viewBox='0 0 240 120'><rect width='240' height='120' fill='%236366f1'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23ffffff' font-family='sans-serif' font-size='16'>HTMLive Image</text></svg>"
-  alt="Biểu trưng đồ họa HTMLive"
+  src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='120' viewBox='0 0 240 120'><rect width='240' height='120' fill='%236366f1'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23ffffff' font-family='sans-serif' font-size='16'>Coderlive Image</text></svg>"
+  alt="Biểu trưng đồ họa Coderlive"
   width="240"
   height="120"
 />
@@ -532,7 +532,7 @@ export const LESSONS: Lesson[] = [
 </main>
 
 <footer style="background: #0f172a; padding: 12px; color: #94a3b8; font-size: 13px;">
-  <p>© 2026 Bản quyền thuộc về HTMLive</p>
+  <p>© 2026 Bản quyền thuộc về Coderlive</p>
 </footer>`,
     lineNotes: [
       { line: 1, tag: '<header>', note: 'Phần mở đầu trang hoặc phân mục, thường chứa logo và tiêu đề.' },

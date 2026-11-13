@@ -3,12 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>HTMLive - Trình Biên Tập & Xem Trước HTML Trực Tiếp</title>
-    <meta name="description" content="Trình soạn thảo mã HTML, CSS và JavaScript trực tuyến với tính năng xem trước tức thì, tùy chọn kích thước hiển thị và bảng thông báo lỗi." />
-    <meta property="og:title" content="HTMLive - Trình Biên Tập & Xem Trước HTML Trực Tiếp" />
-    <meta property="og:description" content="Trình soạn thảo mã HTML, CSS và JavaScript trực tuyến với tính năng xem trước tức thì, tùy chọn kích thước hiển thị và bảng thông báo lỗi." />
+    <title>Coderlive - Trình Biên Tập & Xem Trước HTML Trực Tiếp</title>
+    <meta name="description" content="Coderlive — Trình soạn thảo mã HTML, CSS và JavaScript trực tuyến với tính năng xem trước tức thì, tùy chọn kích thước hiển thị và bảng thông báo lỗi." />
+    <meta property="og:site_name" content="Coderlive" />
+    <meta property="og:title" content="Coderlive - Trình Biên Tập & Xem Trước HTML Trực Tiếp" />
+    <meta property="og:description" content="Coderlive — Trình soạn thảo mã HTML, CSS và JavaScript trực tuyến với tính năng xem trước tức thì, tùy chọn kích thước hiển thị và bảng thông báo lỗi." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Coderlive - Trình Biên Tập & Xem Trước HTML Trực Tiếp" />
+    <meta name="apple-mobile-web-app-title" content="Coderlive" />
+    <meta name="application-name" content="Coderlive" />
+    <meta name="theme-color" content="#6366f1" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -27,7 +35,17 @@
             root.classList.add('is-touch');
           }
 
-          var saved = localStorage.getItem('htmlive_theme_settings_v2');
+          var saved = localStorage.getItem('coderlive_theme_settings_v2');
+          if (!saved) {
+            var legacySettings = localStorage.getItem('htmlive_theme_settings_v2');
+            if (legacySettings) {
+              localStorage.setItem('coderlive_theme_settings_v2', legacySettings);
+              if (localStorage.getItem('coderlive_theme_settings_v2') !== null) {
+                localStorage.removeItem('htmlive_theme_settings_v2');
+              }
+              saved = legacySettings;
+            }
+          }
           var mode = 'dark';
           var accent = '#6366f1';
           if (saved) {
@@ -35,8 +53,18 @@
             if (parsed.mode) mode = parsed.mode;
             if (parsed.accentColor) accent = parsed.accentColor;
           } else {
-            var legacy = localStorage.getItem('htmlive_theme_mode_v1');
-            if (legacy === 'light') mode = 'light';
+            var legacyMode = localStorage.getItem('coderlive_theme_mode_v1');
+            if (!legacyMode) {
+              var oldMode = localStorage.getItem('htmlive_theme_mode_v1');
+              if (oldMode) {
+                localStorage.setItem('coderlive_theme_mode_v1', oldMode);
+                if (localStorage.getItem('coderlive_theme_mode_v1') !== null) {
+                  localStorage.removeItem('htmlive_theme_mode_v1');
+                }
+                legacyMode = oldMode;
+              }
+            }
+            if (legacyMode === 'light') mode = 'light';
           }
           if (mode === 'dark') {
             root.classList.add('dark');

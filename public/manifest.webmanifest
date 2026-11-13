@@ -1,0 +1,19 @@
+{
+  "name": "Coderlive",
+  "short_name": "Coderlive",
+  "description": "Trình soạn thảo mã HTML, CSS và JavaScript trực tuyến với tính năng xem trước tức thì.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#090b14",
+  "theme_color": "#6366f1",
+  "lang": "vi",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

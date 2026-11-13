@@ -1,6 +1,6 @@
 export type LayoutMode = 'horizontal' | 'vertical';
 
-export type WorkspacePreset = 'split-horizontal' | 'split-vertical' | 'focus-code' | 'focus-preview' | 'zen';
+export type WorkspacePreset = 'split-horizontal' | 'split-vertical';
 
 export type DeviceMode = 'desktop' | 'tablet' | 'mobile';
 

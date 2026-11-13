@@ -183,4 +183,11 @@ export interface ThemeSettings {
   collabHideRemoteCursors?: boolean;
   collabHideOwnCursor?: boolean;
   collabChatSound?: boolean;
+
+  // Corner FPS meter preferences
+  showFps?: boolean;
+  fpsCorner?: FpsCorner;
 }
+
+export type FpsCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+

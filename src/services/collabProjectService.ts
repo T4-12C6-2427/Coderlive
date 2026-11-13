@@ -28,7 +28,7 @@ import {
   encodeInitialCollabState,
 } from '../lib/collabYjsHelpers';
 
-const PENDING_INVITE_STORAGE_KEY = 'htmlive_pending_collab_invite_v1';
+const PENDING_INVITE_STORAGE_KEY = 'coderlive_pending_collab_invite_v1';
 
 export interface PendingCollabInvite {
   projectId: string;

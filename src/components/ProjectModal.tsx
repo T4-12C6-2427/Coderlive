@@ -48,7 +48,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   // Initialize or reset form when opened
   useEffect(() => {
     if (isOpen) {
-      if (mode === 'edit' && initialData) {
+      if (initialData) {
         setTitle(initialData.title || '');
         setDescription(initialData.description || '');
         setLanguages(
@@ -56,7 +56,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
             ? initialData.languages
             : ['html', 'css', 'js']
         );
-        setProjectType('personal');
+        setProjectType(mode === 'edit' ? 'personal' : defaultProjectType);
       } else {
         setTitle('');
         setDescription('');

@@ -18,8 +18,11 @@ import {
   UserPlus,
   LogOut,
   ArrowRightLeft,
+  History,
+  RotateCcw,
 } from 'lucide-react';
 import { CollabProject, Project } from '../types';
+import { GuestDraft, RecentProjectRef } from '../lib/draftsAndRecents';
 import { Drawer } from './ui/Drawer';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
@@ -51,6 +54,11 @@ export interface ProjectsPanelProps {
   onRetry?: () => void;
   isGuest?: boolean;
   onOpenAuth?: () => void;
+  guestDrafts?: GuestDraft[];
+  onRestoreDraft?: (draft: GuestDraft) => void;
+  onDeleteDraft?: (draftId: string) => void;
+  recentProjects?: RecentProjectRef[];
+  onOpenRecentProject?: (item: RecentProjectRef) => void;
 }
 
 export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
@@ -79,6 +87,11 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
   onRetry,
   isGuest = false,
   onOpenAuth,
+  guestDrafts = [],
+  onRestoreDraft,
+  onDeleteDraft,
+  recentProjects = [],
+  onOpenRecentProject,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -106,6 +119,24 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
   );
   const filteredCollab = collabProjects.filter((p) =>
     p.title.toLowerCase().includes(normalizedQuery)
+  );
+  const filteredDrafts = isGuest
+    ? guestDrafts.filter((d) => d.title.toLowerCase().includes(normalizedQuery))
+    : [];
+  const resolvedRecents = !isGuest
+    ? recentProjects
+        .map((item) => {
+          if (item.kind === 'collab') {
+            const match = collabProjects.find((cp) => cp.id === item.id);
+            return match ? { ...item, title: match.title } : null;
+          }
+          const match = projects.find((p) => p.id === item.id);
+          return match ? { ...item, title: match.title } : null;
+        })
+        .filter((item): item is RecentProjectRef => item !== null)
+    : [];
+  const filteredRecents = resolvedRecents.filter((item) =>
+    item.title.toLowerCase().includes(normalizedQuery)
   );
 
   const startRenamePersonal = (p: Project) => {
@@ -254,7 +285,9 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
             <Loader2 className="w-6 h-6 animate-spin text-accent" />
             <span className="text-xs">Đang đồng bộ dự án...</span>
           </div>
-        ) : totalCount === 0 ? (
+        ) : totalCount === 0 &&
+          (!isGuest || guestDrafts.length === 0) &&
+          (isGuest || resolvedRecents.length === 0) ? (
           <EmptyState
             icon={<FolderOpen className="w-6 h-6 text-muted" strokeWidth={1.5} />}
             title="Chưa có dự án nào"
@@ -270,12 +303,155 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
               </Button>
             }
           />
-        ) : filteredPersonal.length === 0 && filteredCollab.length === 0 ? (
+        ) : filteredPersonal.length === 0 &&
+          filteredCollab.length === 0 &&
+          filteredDrafts.length === 0 &&
+          filteredRecents.length === 0 ? (
           <div className="py-8 text-center text-xs text-muted">
             Không tìm thấy dự án nào khớp với &quot;{searchQuery}&quot;
           </div>
         ) : (
           <div className="space-y-5">
+            {/* ===================================================== */}
+            {/* GUEST DRAFTS: BẢN NHÁP GẦN NHẤT                        */}
+            {/* ===================================================== */}
+            {isGuest && filteredDrafts.length > 0 && (
+              <section className="space-y-2">
+                <div className="flex items-center justify-between px-0.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-secondary">
+                    <History className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
+                    <span>Bản nháp gần nhất ({filteredDrafts.length})</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {filteredDrafts.map((draft) => (
+                    <div
+                      key={draft.id}
+                      className="p-3 rounded-[var(--radius-md)] border bg-elevated border-default hover:border-strong transition-all flex flex-col gap-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onRestoreDraft?.(draft);
+                              onClose();
+                            }}
+                            className="touch-target-h text-xs font-semibold text-primary hover:text-accent truncate text-left transition-colors cursor-pointer"
+                            title={draft.title}
+                          >
+                            {draft.title}
+                          </button>
+
+                          <div className="flex items-center gap-1 mt-1.5">
+                            {draft.languages.map((lang) => (
+                              <span
+                                key={lang}
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded border select-none ${
+                                  lang === 'html'
+                                    ? 'bg-accent-soft text-accent border-[var(--accent-base)]/30'
+                                    : lang === 'css'
+                                    ? 'bg-[var(--accent-2)]/10 text-[var(--accent-2)] border-[var(--accent-2)]/30'
+                                    : 'bg-[var(--color-warning-soft)] text-[var(--color-warning)] border-[var(--color-warning)]/30'
+                                }`}
+                              >
+                                {lang.toUpperCase()}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {onDeleteDraft && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteDraft(draft.id)}
+                            className="touch-target p-1 text-muted hover:text-[var(--color-danger)] rounded-[var(--radius-xs)] hover:bg-[var(--color-danger-soft)] transition-colors cursor-pointer flex items-center justify-center flex-shrink-0"
+                            title="Xóa bản nháp"
+                            aria-label="Xóa bản nháp"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-muted pt-1 border-t border-subtle">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" strokeWidth={1.5} />
+                          <span>{formatRelativeTime(draft.savedAt)}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onRestoreDraft?.(draft);
+                            onClose();
+                          }}
+                          className="touch-target-h px-1.5 text-accent hover:underline font-medium cursor-pointer flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" strokeWidth={1.5} />
+                          <span>Khôi phục</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* ===================================================== */}
+            {/* SIGNED-IN RECENTS: MỞ GẦN ĐÂY                         */}
+            {/* ===================================================== */}
+            {!isGuest && filteredRecents.length > 0 && (
+              <section className="space-y-2">
+                <div className="flex items-center justify-between px-0.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-secondary">
+                    <History className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
+                    <span>Mở gần đây ({filteredRecents.length})</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  {filteredRecents.map((item) => {
+                    const isActiveRecent =
+                      item.kind === 'collab'
+                        ? item.id === activeCollabProjectId
+                        : !activeCollabProjectId && item.id === activeProjectId;
+
+                    return (
+                      <button
+                        key={`${item.kind}:${item.id}`}
+                        type="button"
+                        onClick={() => {
+                          onOpenRecentProject?.(item);
+                          onClose();
+                        }}
+                        className={`touch-target-h w-full px-3 py-2 rounded-[var(--radius-md)] border text-left transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                          isActiveRecent
+                            ? 'bg-accent-soft border-[var(--accent-base)]/40'
+                            : 'bg-elevated border-default hover:border-strong'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="text-xs font-medium text-primary truncate">
+                            {item.title}
+                          </span>
+                          <Badge
+                            variant={item.kind === 'collab' ? 'accent' : 'default'}
+                            size="sm"
+                          >
+                            {item.kind === 'collab' ? 'Nhóm' : 'Cá nhân'}
+                          </Badge>
+                        </div>
+                        <span className="text-[10px] text-muted flex-shrink-0">
+                          {formatRelativeTime(item.openedAt)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             {/* ===================================================== */}
             {/* SECTION 1: DỰ ÁN NHÓM (TEAM COLLABORATION PROJECTS)    */}
             {/* ===================================================== */}

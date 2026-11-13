@@ -18,7 +18,7 @@ function validateLessonOrdering(lessons: Lesson[]) {
     const orders = lessons.map((l) => l.order);
     const orderSet = new Set(orders);
     if (orderSet.size !== orders.length) {
-      console.warn('[HTMLLive Dev Warning] Phát hiện trùng lặp thứ tự (order) trong danh sách bài học:', orders);
+      console.warn('[Coderlive Dev Warning] Phát hiện trùng lặp thứ tự (order) trong danh sách bài học:', orders);
     }
 
     // Check contiguous topic grouping
@@ -29,7 +29,7 @@ function validateLessonOrdering(lessons: Lesson[]) {
       if (l.topic !== currentTopic) {
         if (seenTopics.has(l.topic)) {
           console.warn(
-            `[HTMLLive Dev Warning] Chủ đề "${l.topic}" xuất hiện không liền mạch tại bài #${l.order} (${l.title})`
+            `[Coderlive Dev Warning] Chủ đề "${l.topic}" xuất hiện không liền mạch tại bài #${l.order} (${l.title})`
           );
         }
         seenTopics.add(l.topic);

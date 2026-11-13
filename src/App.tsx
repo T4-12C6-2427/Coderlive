@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Play,
-  Minimize2,
   CheckCircle2,
   AlertTriangle,
   WifiOff,
@@ -30,16 +29,28 @@ import { ActivityBar } from './components/ActivityBar';
 import { CommandPalette } from './components/CommandPalette';
 import { TemplatesDrawer } from './components/TemplatesDrawer';
 import { PersonalizationDrawer } from './components/PersonalizationDrawer';
-import { TokenInspectorModal } from './components/TokenInspectorModal';
+import { FpsMeter } from './components/FpsMeter';
 import { CloudDiagnosticModal } from './components/CloudDiagnosticModal';
 import { InviteMemberModal } from './components/collab/InviteMemberModal';
 import { MemberManagementModal } from './components/collab/MemberManagementModal';
 import { CollabChatStrip } from './components/collab/CollabChatStrip';
 import { BackgroundLayer } from './components/background/BackgroundLayer';
 import { useTheme } from './contexts/ThemeContext';
-import { Kbd } from './components/ui/Kbd';
 import { Toast } from './components/ui/Feedback';
 import { useVisualViewport } from './hooks/useViewport';
+import {
+  CANONICAL_LANGUAGES,
+  LanguageId,
+  RunHiddenTabs,
+  getEffectivePreviewCodes,
+  getNearestVisibleTab,
+  getTabViewStorageKey,
+  loadTabViewSettings,
+  loadWorkspaceViewState,
+  normalizeLanguages,
+  saveTabViewSettings,
+  saveWorkspaceViewState,
+} from './lib/editorWorkspaceUtils';
 import {
   LayoutMode,
   ThemeMode,
@@ -62,10 +73,15 @@ import {
   CollabPreviewSyncState,
 } from './types';
 import {
-  DEFAULT_HTML_PART,
-  DEFAULT_CSS_PART,
-  DEFAULT_JS_PART,
-} from './constants/templates';
+  GuestDraft,
+  RecentProjectRef,
+  capturePreviousGuestDraftOnStartup,
+  deleteGuestDraft,
+  getGuestDrafts,
+  getRecentProjects,
+  recordRecentProject,
+  removeRecentProject,
+} from './lib/draftsAndRecents';
 import { useAuth } from './contexts/AuthContext';
 import {
   getUserProjects,
@@ -115,15 +131,14 @@ import { combineCode, compilePreviewDocument, migrateProjectCode } from './lib/c
 import { runStaticChecks } from './lib/staticLinter';
 
 const STORAGE_KEYS = {
-  TABS_CODE: 'htmlive_code_tabs_v2',
-  LEGACY_CODE: 'htmlive_code_content_v1',
-  LAYOUT: 'htmlive_layout_mode_v1',
-  THEME: 'htmlive_theme_mode_v1',
-  SPLIT_RATIO: 'htmlive_split_ratio_v1',
-  LAST_PROJECT_PREFIX: 'htmlive_last_project_',
-  WORKSPACE_PRESET: 'htmlive_workspace_preset_v1',
-  ACTIVITY_BAR: 'htmlive_activity_bar_visible_v1',
-  COLLAB_PRIVACY_NOTICE_SEEN: 'htmlive_collab_privacy_notice_seen_v1',
+  TABS_CODE: 'coderlive_code_tabs_v2',
+  LEGACY_CODE: 'coderlive_code_content_v1',
+  LAYOUT: 'coderlive_layout_mode_v1',
+  THEME: 'coderlive_theme_mode_v1',
+  SPLIT_RATIO: 'coderlive_split_ratio_v1',
+  LAST_PROJECT_PREFIX: 'coderlive_last_project_',
+  ACTIVITY_BAR: 'coderlive_activity_bar_visible_v1',
+  COLLAB_PRIVACY_NOTICE_SEEN: 'coderlive_collab_privacy_notice_seen_v1',
 };
 
 export default function App() {
@@ -133,6 +148,10 @@ export default function App() {
   const { settings, updateSettings, toggleThemeMode } = useTheme();
   const theme = settings.mode;
   const handleToggleTheme = toggleThemeMode;
+  const isFpsVisible = settings.showFps ?? isSplitDesktop;
+  const handleToggleFps = useCallback(() => {
+    updateSettings({ showFps: !isFpsVisible });
+  }, [isFpsVisible, updateSettings]);
 
   const hideRemoteCursors = Boolean(settings.collabHideRemoteCursors);
   const hideOwnCursor = Boolean(settings.collabHideOwnCursor);
@@ -147,59 +166,21 @@ export default function App() {
   // Active Editor Tab ('html' | 'css' | 'js')
   const [activeTab, setActiveTab] = useState<EditorTab>('html');
 
-  // Code state: HTML, CSS, JS
-  const [htmlCode, setHtmlCode] = useState<string>(() => {
-    const savedTabs = localStorage.getItem(STORAGE_KEYS.TABS_CODE);
-    if (savedTabs) {
-      try {
-        const parsed = JSON.parse(savedTabs);
-        if (parsed.htmlCode !== undefined) return parsed.htmlCode;
-      } catch {}
-    }
-    // Check legacy migration
-    const legacy = localStorage.getItem(STORAGE_KEYS.LEGACY_CODE);
-    if (legacy) return legacy;
-    return DEFAULT_HTML_PART;
-  });
-
-  const [cssCode, setCssCode] = useState<string>(() => {
-    const savedTabs = localStorage.getItem(STORAGE_KEYS.TABS_CODE);
-    if (savedTabs) {
-      try {
-        const parsed = JSON.parse(savedTabs);
-        if (parsed.cssCode !== undefined) return parsed.cssCode;
-      } catch {}
-    }
-    // If legacy code exists, leave CSS empty so legacy works in HTML tab
-    const legacy = localStorage.getItem(STORAGE_KEYS.LEGACY_CODE);
-    if (legacy) return '';
-    return DEFAULT_CSS_PART;
-  });
-
-  const [jsCode, setJsCode] = useState<string>(() => {
-    const savedTabs = localStorage.getItem(STORAGE_KEYS.TABS_CODE);
-    if (savedTabs) {
-      try {
-        const parsed = JSON.parse(savedTabs);
-        if (parsed.jsCode !== undefined) return parsed.jsCode;
-      } catch {}
-    }
-    // If legacy code exists, leave JS empty so legacy works in HTML tab
-    const legacy = localStorage.getItem(STORAGE_KEYS.LEGACY_CODE);
-    if (legacy) return '';
-    return DEFAULT_JS_PART;
-  });
+  // Code state: Always start completely empty on startup
+  const [htmlCode, setHtmlCode] = useState<string>('');
+  const [cssCode, setCssCode] = useState<string>('');
+  const [jsCode, setJsCode] = useState<string>('');
 
   // Debounced snapshot cho sandbox preview iframe + source map + channel token
   const [previewSnapshot, setPreviewSnapshot] = useState<{
     html: string;
     css: string;
     js: string;
-  }>(() => ({ html: htmlCode, css: cssCode, js: jsCode }));
+  }>({ html: '', css: '', js: '' });
   const lastCompiledCodesRef = useRef<{ html: string; css: string; js: string }>({
-    html: htmlCode,
-    css: cssCode,
-    js: jsCode,
+    html: '',
+    css: '',
+    js: '',
   });
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
@@ -231,29 +212,29 @@ export default function App() {
   );
 
   const [isCopied, setIsCopied] = useState<boolean>(false);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [activeTemplateId, setActiveTemplateId] = useState<string | undefined>('welcome');
+  const [activeTemplateId, setActiveTemplateId] = useState<string | undefined>(undefined);
+
+  // Initial per-user workspace view state (preset, splitRatio)
+  const initialWorkspaceView = useMemo(() => loadWorkspaceViewState(currentUser?.uid), []);
 
   // Split ratio for resizer
-  const [splitRatio, setSplitRatio] = useState<number>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SPLIT_RATIO);
-    if (saved) {
-      const val = parseFloat(saved);
-      if (!isNaN(val) && val >= 0.15 && val <= 0.85) return val;
-    }
-    return 0.5;
-  });
+  const [splitRatio, setSplitRatio] = useState<number>(initialWorkspaceView.splitRatio);
 
   // Project and Cloud Persistence States
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [collabProjects, setCollabProjects] = useState<CollabProject[]>([]);
   const [activeCollabProject, setActiveCollabProject] = useState<CollabProject | null>(null);
-  const [projectTitle, setProjectTitle] = useState<string>('Trang Chào Mừng');
+  const [projectTitle, setProjectTitle] = useState<string>('Dự án chưa đặt tên');
   const [cloudSaveStatus, setCloudSaveStatus] = useState<CloudSaveStatus>('idle');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [isProjectsLoading, setIsProjectsLoading] = useState<boolean>(false);
   const [projectsLoadError, setProjectsLoadError] = useState<string | null>(null);
+  const [guestDrafts, setGuestDrafts] = useState<GuestDraft[]>(() => getGuestDrafts());
+  const [recentProjects, setRecentProjects] = useState<RecentProjectRef[]>([]);
+  const [isSavingScratchToNewProject, setIsSavingScratchToNewProject] = useState<boolean>(false);
+  const [pendingTemplate, setPendingTemplate] = useState<CodeTemplate | null>(null);
+  const hasCapturedGuestDraftRef = useRef<boolean>(false);
 
   // Collaborative Team Modals & Flows
   const [defaultNewProjectType, setDefaultNewProjectType] = useState<'personal' | 'collab'>('personal');
@@ -328,8 +309,17 @@ export default function App() {
     };
   }, []);
 
-  // Active Languages for Tabs ('html' | 'css' | 'js')
-  const [activeLanguages, setActiveLanguages] = useState<('html' | 'css' | 'js')[]>(['html', 'css', 'js']);
+  // Active Languages for Tabs ('html' | 'css' | 'js') & whether hidden tabs still contribute to preview
+  const initialScratchTabView = useMemo(
+    () =>
+      loadTabViewSettings(
+        getTabViewStorageKey({ isSharedView: false, collabProjectId: null, projectId: null, userId: null }),
+        CANONICAL_LANGUAGES
+      ),
+    []
+  );
+  const [activeLanguages, setActiveLanguages] = useState<LanguageId[]>(initialScratchTabView.languages);
+  const [runHiddenTabs, setRunHiddenTabs] = useState<RunHiddenTabs>(initialScratchTabView.runHiddenTabs);
 
   // Project Modal State (Create & Edit)
   const [isProjectModalOpen, setIsProjectModalOpen] = useState<boolean>(false);
@@ -339,6 +329,7 @@ export default function App() {
   // Tab removal confirmation state
   const [isConfirmRemoveTabOpen, setIsConfirmRemoveTabOpen] = useState<boolean>(false);
   const [pendingRemoveLang, setPendingRemoveLang] = useState<'css' | 'js' | null>(null);
+  const [keepHiddenCodeInPreview, setKeepHiddenCodeInPreview] = useState<boolean>(true);
 
   // Toast feedback state
   const [toastMessage, setToastMessage] = useState<string>('');
@@ -370,6 +361,7 @@ export default function App() {
   );
 
   const handleOpenNewProjectModal = useCallback((defaultType: 'personal' | 'collab' = 'personal') => {
+    setIsSavingScratchToNewProject(false);
     setProjectModalMode('create');
     setEditingProject(null);
     setEditingCollabProject(null);
@@ -378,6 +370,7 @@ export default function App() {
   }, []);
 
   const handleOpenEditProjectModal = useCallback((proj: Project) => {
+    setIsSavingScratchToNewProject(false);
     setProjectModalMode('edit');
     setEditingProject(proj);
     setEditingCollabProject(null);
@@ -385,44 +378,69 @@ export default function App() {
   }, []);
 
   const handleOpenEditCollabProjectModal = useCallback((proj: CollabProject) => {
+    setIsSavingScratchToNewProject(false);
     setProjectModalMode('edit');
     setEditingProject(null);
     setEditingCollabProject(proj);
     setIsProjectModalOpen(true);
   }, []);
 
-  // Workspace Preset state (Phase 2 Requirement 5)
-  const [workspacePreset, setWorkspacePreset] = useState<WorkspacePreset>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.WORKSPACE_PRESET);
-    return (saved as WorkspacePreset) || 'split-horizontal';
-  });
+  // Workspace Preset (only split-horizontal / split-vertical)
+  const [workspacePreset, setWorkspacePreset] = useState<WorkspacePreset>(initialWorkspaceView.preset);
+  const [lastSplitPreset, setLastSplitPreset] = useState<'split-horizontal' | 'split-vertical'>(
+    initialWorkspaceView.lastSplitPreset
+  );
+  const hydratedWorkspaceUidRef = useRef<string | null | undefined>(undefined);
 
-  // Activity bar visibility state (Phase 2 Requirement 3)
+  // Activity bar visibility state
   const [isActivityBarVisible, setIsActivityBarVisible] = useState<boolean>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ACTIVITY_BAR);
     return saved !== 'false';
   });
 
-  // Command palette & drawer states (Phase 2 Requirement 2 & 4)
+  // Command palette & drawer states
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isTemplatesDrawerOpen, setIsTemplatesDrawerOpen] = useState(false);
   const [isPersonalizeOpen, setIsPersonalizeOpen] = useState(false);
 
+  // Hydrate workspace view state when user changes
+  useEffect(() => {
+    if (authLoading) return;
+    const uid = currentUser?.uid || null;
+    if (hydratedWorkspaceUidRef.current === uid) return;
+    hydratedWorkspaceUidRef.current = uid;
+    const loaded = loadWorkspaceViewState(uid);
+    setWorkspacePreset(loaded.preset);
+    setSplitRatio(loaded.splitRatio);
+    setLastSplitPreset(loaded.lastSplitPreset);
+    setLayout(loaded.lastSplitPreset === 'split-vertical' ? 'vertical' : 'horizontal');
+  }, [authLoading, currentUser?.uid]);
+
+  // Persist workspace view state per user
+  useEffect(() => {
+    if (authLoading) return;
+    saveWorkspaceViewState(currentUser?.uid, {
+      preset: workspacePreset,
+      splitRatio,
+      lastSplitPreset,
+    });
+  }, [
+    authLoading,
+    currentUser?.uid,
+    workspacePreset,
+    splitRatio,
+    lastSplitPreset,
+  ]);
+
   const handleSetWorkspacePreset = useCallback((preset: WorkspacePreset) => {
-    setWorkspacePreset(preset);
-    localStorage.setItem(STORAGE_KEYS.WORKSPACE_PRESET, preset);
-    if (preset === 'split-horizontal') {
-      setLayout('horizontal');
-      setIsFullscreen(false);
-    } else if (preset === 'split-vertical') {
+    if (preset === 'split-vertical') {
       setLayout('vertical');
-      setIsFullscreen(false);
-    } else if (preset === 'focus-preview') {
-      setIsFullscreen(true);
-    } else if (preset === 'focus-code') {
-      setIsFullscreen(false);
-    } else if (preset === 'zen') {
-      setIsFullscreen(false);
+      setLastSplitPreset('split-vertical');
+      setWorkspacePreset('split-vertical');
+    } else {
+      setLayout('horizontal');
+      setLastSplitPreset('split-horizontal');
+      setWorkspacePreset('split-horizontal');
     }
   }, []);
 
@@ -434,29 +452,24 @@ export default function App() {
     });
   }, []);
 
-  // Global Keyboard shortcuts: Ctrl/Cmd+K (Command Palette), Ctrl+Alt+N (New Project), and F11 / Ctrl+Shift+Z (Zen Mode)
+  // Global Keyboard shortcuts: Ctrl/Cmd+K (Command Palette), Ctrl+Alt+N (New Project)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
+        return;
       }
       if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         handleOpenNewProjectModal();
-      }
-      if (e.key === 'F11' || ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'z')) {
-        e.preventDefault();
-        handleSetWorkspacePreset(workspacePreset === 'zen' ? 'split-horizontal' : 'zen');
-      }
-      if (e.key === 'Escape' && workspacePreset === 'zen') {
-        handleSetWorkspacePreset('split-horizontal');
+        return;
       }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [workspacePreset, handleSetWorkspacePreset, handleOpenNewProjectModal]);
+  }, [handleOpenNewProjectModal]);
 
   // Track previous user to detect guest-to-login transitions
   const prevUserRef = useRef<string | null>(null);
@@ -466,9 +479,7 @@ export default function App() {
   const [consoleMessages, setConsoleMessages] = useState<ConsoleMessage[]>([]);
   const consoleMessagesRef = useRef<ConsoleMessage[]>([]);
   consoleMessagesRef.current = consoleMessages;
-  const [staticIssues, setStaticIssues] = useState<StaticIssue[]>(() =>
-    runStaticChecks(htmlCode, cssCode)
-  );
+  const [staticIssues, setStaticIssues] = useState<StaticIssue[]>([]);
   const [cursorJumpTarget, setCursorJumpTarget] = useState<{
     tab: EditorTab;
     line: number;
@@ -482,11 +493,12 @@ export default function App() {
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const isCodeEmpty = !htmlCode && !cssCode && !jsCode;
+
   // Test Firebase connection on boot
   useEffect(() => {
     testConnection();
   }, []);
-
 
   // Save layout preference
   useEffect(() => {
@@ -498,17 +510,17 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.SPLIT_RATIO, splitRatio.toString());
   }, [splitRatio]);
 
-  // Warn before closing tab if unsaved changes exist
+  // Warn before closing tab only when unsaved non-empty changes exist
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
+      if (hasUnsavedChanges && !isCodeEmpty) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedChanges]);
+  }, [hasUnsavedChanges, isCodeEmpty]);
 
   // Derived collaborative team project permissions
   const activeCollabRole =
@@ -597,12 +609,6 @@ export default function App() {
       (updated) => {
         setActiveCollabProject(updated);
         setProjectTitle(updated.title);
-        const langs = (
-          updated.languages && updated.languages.length > 0
-            ? updated.languages
-            : ['html', 'css', 'js']
-        ) as ('html' | 'css' | 'js')[];
-        setActiveLanguages(langs);
       },
       () => {
         // Thành viên bị xóa hoặc dự án đã bị xóa -> mất quyền truy cập ngay lập tức
@@ -626,12 +632,16 @@ export default function App() {
           updatePreviewSnapshot(fallback.htmlCode, fallback.cssCode || '', fallback.jsCode || '');
         } else {
           setActiveProject(null);
-          setProjectTitle('Trang Chào Mừng');
-          setHtmlCode(DEFAULT_HTML_PART);
-          setCssCode(DEFAULT_CSS_PART);
-          setJsCode(DEFAULT_JS_PART);
+          setProjectTitle('Dự án chưa đặt tên');
+          setHtmlCode('');
+          setCssCode('');
+          setJsCode('');
+          setActiveTemplateId(undefined);
           setActiveLanguages(['html', 'css', 'js']);
-          updatePreviewSnapshot(DEFAULT_HTML_PART, DEFAULT_CSS_PART, DEFAULT_JS_PART);
+          setRunHiddenTabs({ css: true, js: true });
+          setActiveTab('html');
+          updatePreviewSnapshot('', '', '');
+          setStaticIssues([]);
         }
 
         showToast('Bạn không còn quyền truy cập dự án nhóm này');
@@ -1116,35 +1126,113 @@ export default function App() {
     [activeCollabProject, currentUser, currentCollabIdentity, syncPreviewEnabled]
   );
 
+  const currentTabViewKey = useMemo(
+    () =>
+      getTabViewStorageKey({
+        isSharedView,
+        collabProjectId: activeCollabProject?.id,
+        projectId: activeProject?.id,
+        userId: currentUser?.uid,
+      }),
+    [isSharedView, activeCollabProject?.id, activeProject?.id, currentUser?.uid]
+  );
+
+  const effectivePreviewCodes = useMemo(
+    () =>
+      getEffectivePreviewCodes(
+        { html: htmlCode, css: cssCode, js: jsCode },
+        activeLanguages,
+        runHiddenTabs
+      ),
+    [htmlCode, cssCode, jsCode, activeLanguages, runHiddenTabs]
+  );
+
   // Real-time preview update (debounce ~500ms, xóa lỗi cũ khi chạy lại bản mới)
   useEffect(() => {
     const timer = setTimeout(() => {
       const prev = lastCompiledCodesRef.current;
-      if (prev.html === htmlCode && prev.css === cssCode && prev.js === jsCode) {
+      if (
+        prev.html === effectivePreviewCodes.html &&
+        prev.css === effectivePreviewCodes.css &&
+        prev.js === effectivePreviewCodes.js
+      ) {
         return;
       }
-      updatePreviewSnapshot(htmlCode, cssCode, jsCode, true);
+      updatePreviewSnapshot(
+        effectivePreviewCodes.html,
+        effectivePreviewCodes.css,
+        effectivePreviewCodes.js,
+        true
+      );
     }, 500);
     return () => clearTimeout(timer);
-  }, [htmlCode, cssCode, jsCode, updatePreviewSnapshot]);
+  }, [effectivePreviewCodes, updatePreviewSnapshot]);
 
-  // Kiểm tra tĩnh HTML/CSS tự động (debounce ~250ms)
+  const isPreviewEmpty =
+    !previewSnapshot.html && !previewSnapshot.css && !previewSnapshot.js;
+
+  const resetToBlankEditor = useCallback(() => {
+    setActiveCollabProject(null);
+    setActiveProject(null);
+    setProjectTitle('Dự án chưa đặt tên');
+    setHtmlCode('');
+    setCssCode('');
+    setJsCode('');
+    setActiveTemplateId(undefined);
+    setActiveLanguages(['html', 'css', 'js']);
+    setRunHiddenTabs({ css: true, js: true });
+    setActiveTab('html');
+    updatePreviewSnapshot('', '', '', true);
+    setStaticIssues([]);
+    setCloudSaveStatus('idle');
+    setHasUnsavedChanges(false);
+  }, [updatePreviewSnapshot]);
+
+  // Kiểm tra tĩnh HTML/CSS tự động (debounce ~250ms; bỏ qua khi trình soạn thảo trống)
   useEffect(() => {
+    if (!effectivePreviewCodes.html && !effectivePreviewCodes.css && !effectivePreviewCodes.js) {
+      setStaticIssues([]);
+      return;
+    }
     const timer = setTimeout(() => {
-      setStaticIssues(runStaticChecks(htmlCode, cssCode));
+      setStaticIssues(runStaticChecks(effectivePreviewCodes.html, effectivePreviewCodes.css));
     }, 250);
     return () => clearTimeout(timer);
-  }, [htmlCode, cssCode]);
+  }, [effectivePreviewCodes.html, effectivePreviewCodes.css, effectivePreviewCodes.js]);
 
-  // Guest local storage auto-save
+  // On guest startup, preserve previous non-empty session scratch code as a draft in "Bản nháp gần nhất" (FIFO max 5)
   useEffect(() => {
-    if (!currentUser && !isSharedView && !activeCollabProject) {
+    if (authLoading || currentUser || isSharedView) return;
+    if (hasCapturedGuestDraftRef.current) return;
+    hasCapturedGuestDraftRef.current = true;
+
+    const { capturedDraft, drafts } = capturePreviousGuestDraftOnStartup();
+    setGuestDrafts(drafts);
+    if (capturedDraft) {
+      showToast('Đã lưu bản nháp của phiên trước trong mục Dự án', 'info', {
+        durationMs: 4500,
+      });
+    }
+  }, [authLoading, currentUser, isSharedView, showToast]);
+
+  // Guest local storage scratch auto-save (only after auth resolved and when code is non-empty)
+  useEffect(() => {
+    if (authLoading || currentUser || isSharedView || activeCollabProject || activeProject) return;
+    if (htmlCode || cssCode || jsCode) {
       localStorage.setItem(
         STORAGE_KEYS.TABS_CODE,
-        JSON.stringify({ htmlCode, cssCode, jsCode })
+        JSON.stringify({ htmlCode, cssCode, jsCode, title: projectTitle })
       );
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.TABS_CODE);
     }
-  }, [htmlCode, cssCode, jsCode, currentUser, isSharedView, activeCollabProject]);
+  }, [authLoading, htmlCode, cssCode, jsCode, projectTitle, currentUser, isSharedView, activeCollabProject, activeProject]);
+
+  // Track unsaved changes when editing scratch code outside any saved project
+  useEffect(() => {
+    if (authLoading || activeProject || activeCollabProject || isSharedView) return;
+    setHasUnsavedChanges(!isCodeEmpty);
+  }, [authLoading, activeProject, activeCollabProject, isSharedView, isCodeEmpty]);
 
   // Cloud Auto-save to Firestore for logged in personal projects (debounce ~2s)
   useEffect(() => {
@@ -1209,28 +1297,10 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [htmlCode, cssCode, jsCode, projectTitle, currentUser, activeProject, activeCollabProject, isSharedView]);
 
-  // Load guest projects when not logged in
+  // Load guest projects list when not logged in (never auto-open on startup)
   useEffect(() => {
     if (authLoading || currentUser || isSharedView) return;
-    const guestProjects = getGuestProjects();
-    setProjects(guestProjects);
-    if (guestProjects.length > 0 && !activeProject) {
-      const lastGuestId = localStorage.getItem('htmlive_last_guest_project');
-      const found = guestProjects.find((p) => p.id === lastGuestId) || guestProjects[0];
-      if (found) {
-        setActiveProject(found);
-        setProjectTitle(found.title);
-        setHtmlCode(found.htmlCode);
-        setCssCode(found.cssCode || '');
-        setJsCode(found.jsCode || '');
-        const langs = (found.languages && found.languages.length > 0 ? found.languages : ['html', 'css', 'js']) as ('html' | 'css' | 'js')[];
-        setActiveLanguages(langs);
-        if (!langs.includes(activeTab)) {
-          setActiveTab('html');
-        }
-        updatePreviewSnapshot(found.htmlCode, found.cssCode || '', found.jsCode || '');
-      }
-    }
+    setProjects(getGuestProjects());
   }, [currentUser, authLoading, isSharedView]);
 
   // Load user projects and handle auth transitions + pending collab invite join
@@ -1256,12 +1326,8 @@ export default function App() {
       if (pendingInvite) {
         loadUserProjectsAndLastActive(currentUid);
       } else {
-        const isCustomGuestCode =
-          htmlCode !== DEFAULT_HTML_PART ||
-          cssCode !== DEFAULT_CSS_PART ||
-          jsCode !== DEFAULT_JS_PART;
-
-        if (isCustomGuestCode) {
+        const hasGuestWork = Boolean(htmlCode.trim() || cssCode.trim() || jsCode.trim());
+        if (hasGuestWork) {
           guestCodeSnapshotRef.current = { html: htmlCode, css: cssCode, js: jsCode };
           setIsGuestPromptOpen(true);
         } else {
@@ -1274,16 +1340,8 @@ export default function App() {
       const guestProjects = getGuestProjects();
       setProjects(guestProjects);
       setCollabProjects([]);
-      setActiveCollabProject(null);
-      setActiveProject(null);
-      setProjectTitle('Trang Chào Mừng');
-      setHtmlCode(DEFAULT_HTML_PART);
-      setCssCode(DEFAULT_CSS_PART);
-      setJsCode(DEFAULT_JS_PART);
-      setActiveLanguages(['html', 'css', 'js']);
-      setActiveTab('html');
-      updatePreviewSnapshot(DEFAULT_HTML_PART, DEFAULT_CSS_PART, DEFAULT_JS_PART);
-      setCloudSaveStatus('idle');
+      setRecentProjects([]);
+      resetToBlankEditor();
       localStorage.removeItem(STORAGE_KEYS.TABS_CODE);
       localStorage.removeItem(STORAGE_KEYS.LEGACY_CODE);
     }
@@ -1309,46 +1367,14 @@ export default function App() {
       });
   }, [currentUser, authLoading, isSharedView]);
 
-  // Load projects from Firestore
+  // Load projects from Firestore without auto-opening or auto-creating a starter project
   const loadUserProjectsAndLastActive = async (uid: string) => {
     setIsProjectsLoading(true);
     setProjectsLoadError(null);
     try {
       const userProjects = await getUserProjects(uid);
       setProjects(userProjects);
-
-      if (userProjects.length > 0) {
-        const lastOpenedId = localStorage.getItem(`${STORAGE_KEYS.LAST_PROJECT_PREFIX}${uid}`);
-        const found = userProjects.find((p) => p.id === lastOpenedId) || userProjects[0];
-        setActiveProject(found);
-        setProjectTitle(found.title);
-        setHtmlCode(found.htmlCode);
-        setCssCode(found.cssCode || '');
-        setJsCode(found.jsCode || '');
-        const langs = (found.languages && found.languages.length > 0 ? found.languages : ['html', 'css', 'js']) as ('html' | 'css' | 'js')[];
-        setActiveLanguages(langs);
-        if (!langs.includes(activeTab)) {
-          setActiveTab('html');
-        }
-        updatePreviewSnapshot(found.htmlCode, found.cssCode || '', found.jsCode || '');
-      } else {
-        const initialProj = await saveProject(uid, {
-          title: 'Dự án đầu tiên của tôi',
-          languages: ['html', 'css', 'js'],
-          htmlCode: DEFAULT_HTML_PART,
-          cssCode: DEFAULT_CSS_PART,
-          jsCode: DEFAULT_JS_PART,
-          authorEmail: currentUser?.email || undefined,
-        });
-        setProjects([initialProj]);
-        setActiveProject(initialProj);
-        setProjectTitle(initialProj.title);
-        setHtmlCode(initialProj.htmlCode);
-        setCssCode(initialProj.cssCode || '');
-        setJsCode(initialProj.jsCode || '');
-        setActiveLanguages(['html', 'css', 'js']);
-        localStorage.setItem(`${STORAGE_KEYS.LAST_PROJECT_PREFIX}${uid}`, initialProj.id);
-      }
+      setRecentProjects(getRecentProjects(uid));
     } catch (err: any) {
       console.error('Lỗi tải danh sách dự án:', err);
       setProjectsLoadError('Không thể tải danh sách dự án đám mây. Vui lòng thử lại.');
@@ -1379,8 +1405,18 @@ export default function App() {
       setHtmlCode(newProj.htmlCode);
       setCssCode(newProj.cssCode || '');
       setJsCode(newProj.jsCode || '');
+      setRecentProjects(
+        recordRecentProject(currentUser.uid, {
+          id: newProj.id,
+          kind: 'personal',
+          title: newProj.title,
+        })
+      );
       localStorage.setItem(`${STORAGE_KEYS.LAST_PROJECT_PREFIX}${currentUser.uid}`, newProj.id);
+      localStorage.removeItem(STORAGE_KEYS.TABS_CODE);
+      localStorage.removeItem(STORAGE_KEYS.LEGACY_CODE);
       setCloudSaveStatus('saved');
+      setHasUnsavedChanges(false);
       showToast('Đã lưu mã từ phiên khách thành dự án mới');
     } catch (err) {
       console.error('Lỗi khi lưu mã từ phiên khách:', err);
@@ -1390,12 +1426,15 @@ export default function App() {
 
   const handleDiscardGuestCode = () => {
     setIsGuestPromptOpen(false);
+    resetToBlankEditor();
+    localStorage.removeItem(STORAGE_KEYS.TABS_CODE);
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_CODE);
     if (currentUser) {
       loadUserProjectsAndLastActive(currentUser.uid);
     }
   };
 
-  // Manual Save (Cloud for logged-in personal & Collab flush/compaction, localStorage for guest)
+  // Manual Save (Cloud for logged-in personal & Collab flush/compaction, modal prompt for unsaved scratch code)
   const handleManualSave = async () => {
     if (isEditorReadOnly) return;
 
@@ -1420,38 +1459,43 @@ export default function App() {
       return;
     }
 
+    if (!activeProject) {
+      if (isCodeEmpty) {
+        showToast('Chưa có code để lưu. Hãy nhập code trước khi lưu dự án.', 'info');
+        return;
+      }
+      setIsSavingScratchToNewProject(true);
+      setProjectModalMode('create');
+      setEditingProject(null);
+      setEditingCollabProject(null);
+      setDefaultNewProjectType('personal');
+      setIsProjectModalOpen(true);
+      return;
+    }
+
     const targetUid = currentUser?.uid || 'guest';
     setCloudSaveStatus('saving');
     try {
-      if (activeProject) {
-        await updateProject(targetUid, activeProject.id, {
-          title: projectTitle,
-          htmlCode,
-          cssCode,
-          jsCode,
-          languages: activeLanguages,
-        });
-        setActiveProject((prev) =>
-          prev
-            ? { ...prev, title: projectTitle, htmlCode, cssCode, jsCode, languages: activeLanguages, updatedAt: new Date().toISOString() }
-            : null
-        );
-      } else {
-        const newProj = await saveProject(targetUid, {
-          title: projectTitle || 'Dự án mới',
-          languages: activeLanguages,
-          htmlCode,
-          cssCode,
-          jsCode,
-          authorEmail: currentUser?.email || undefined,
-        });
-        setActiveProject(newProj);
-        if (currentUser) {
-          localStorage.setItem(`${STORAGE_KEYS.LAST_PROJECT_PREFIX}${currentUser.uid}`, newProj.id);
-        } else {
-          localStorage.setItem('htmlive_last_guest_project', newProj.id);
-        }
-      }
+      await updateProject(targetUid, activeProject.id, {
+        title: projectTitle,
+        htmlCode,
+        cssCode,
+        jsCode,
+        languages: activeLanguages,
+      });
+      setActiveProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              title: projectTitle,
+              htmlCode,
+              cssCode,
+              jsCode,
+              languages: activeLanguages,
+              updatedAt: new Date().toISOString(),
+            }
+          : null
+      );
       const updatedList = currentUser ? await getUserProjects(currentUser.uid) : getGuestProjects();
       setProjects(updatedList);
       setCloudSaveStatus('saved');
@@ -1464,45 +1508,138 @@ export default function App() {
   };
 
   // Select personal project from panel
-  const handleSelectProject = (project: Project) => {
-    setActiveCollabProject(null);
-    setActiveProject(project);
-    setProjectTitle(project.title);
-    setHtmlCode(project.htmlCode);
-    setCssCode(project.cssCode || '');
-    setJsCode(project.jsCode || '');
-    const langs = (project.languages && project.languages.length > 0 ? project.languages : ['html', 'css', 'js']) as ('html' | 'css' | 'js')[];
-    setActiveLanguages(langs);
-    if (!langs.includes(activeTab)) {
-      setActiveTab('html');
-    }
-    updatePreviewSnapshot(project.htmlCode, project.cssCode || '', project.jsCode || '');
-    setCloudSaveStatus('idle');
-    setHasUnsavedChanges(false);
-    if (currentUser) {
-      localStorage.setItem(`${STORAGE_KEYS.LAST_PROJECT_PREFIX}${currentUser.uid}`, project.id);
-    } else {
-      localStorage.setItem('htmlive_last_guest_project', project.id);
-    }
-  };
+  const handleSelectProject = useCallback(
+    (project: Project) => {
+      setActiveCollabProject(null);
+      setActiveProject(project);
+      setActiveTemplateId(undefined);
+      setProjectTitle(project.title);
+      setHtmlCode(project.htmlCode);
+      setCssCode(project.cssCode || '');
+      setJsCode(project.jsCode || '');
+      const viewSettings = loadTabViewSettings(
+        getTabViewStorageKey({ isSharedView: false, projectId: project.id, userId: currentUser?.uid }),
+        normalizeLanguages(project.languages)
+      );
+      setActiveLanguages(viewSettings.languages);
+      setRunHiddenTabs(viewSettings.runHiddenTabs);
+      if (!viewSettings.languages.includes(activeTab)) {
+        setActiveTab('html');
+      }
+      const eff = getEffectivePreviewCodes(
+        { html: project.htmlCode, css: project.cssCode || '', js: project.jsCode || '' },
+        viewSettings.languages,
+        viewSettings.runHiddenTabs
+      );
+      updatePreviewSnapshot(eff.html, eff.css, eff.js);
+      setCloudSaveStatus('idle');
+      setHasUnsavedChanges(false);
+      if (currentUser) {
+        localStorage.setItem(`${STORAGE_KEYS.LAST_PROJECT_PREFIX}${currentUser.uid}`, project.id);
+        setRecentProjects(
+          recordRecentProject(currentUser.uid, {
+            id: project.id,
+            kind: 'personal',
+            title: project.title,
+          })
+        );
+      } else {
+        localStorage.setItem('coderlive_last_guest_project', project.id);
+      }
+    },
+    [activeTab, currentUser, updatePreviewSnapshot]
+  );
 
-  // Select collaborative team project (CollabProvider streams Y.Doc state live)
-  const handleSelectCollabProject = async (collabProj: CollabProject) => {
-    setActiveProject(null);
-    setActiveCollabProject(collabProj);
-    setProjectTitle(collabProj.title);
-    const langs = (
-      collabProj.languages && collabProj.languages.length > 0
-        ? collabProj.languages
-        : ['html', 'css', 'js']
-    ) as ('html' | 'css' | 'js')[];
-    setActiveLanguages(langs);
-    if (!langs.includes(activeTab)) {
+  // Select collaborative team project (CollabProvider streams Y.Doc state live; visible tabs stay local per user)
+  const handleSelectCollabProject = useCallback(
+    async (collabProj: CollabProject) => {
+      setActiveProject(null);
+      setActiveCollabProject(collabProj);
+      setActiveTemplateId(undefined);
+      setProjectTitle(collabProj.title);
+      const viewSettings = loadTabViewSettings(
+        getTabViewStorageKey({
+          isSharedView: false,
+          collabProjectId: collabProj.id,
+          userId: currentUser?.uid,
+        }),
+        normalizeLanguages(collabProj.languages)
+      );
+      setActiveLanguages(viewSettings.languages);
+      setRunHiddenTabs(viewSettings.runHiddenTabs);
+      if (!viewSettings.languages.includes(activeTab)) {
+        setActiveTab('html');
+      }
+      if (currentUser) {
+        setRecentProjects(
+          recordRecentProject(currentUser.uid, {
+            id: collabProj.id,
+            kind: 'collab',
+            title: collabProj.title,
+          })
+        );
+      }
+      setCloudSaveStatus('saved');
+      setHasUnsavedChanges(false);
+    },
+    [activeTab, currentUser]
+  );
+
+  const handleOpenRecentProject = useCallback(
+    async (item: RecentProjectRef) => {
+      if (item.kind === 'collab') {
+        const target = collabProjects.find((cp) => cp.id === item.id);
+        if (target) {
+          await handleSelectCollabProject(target);
+        }
+      } else {
+        const target = projects.find((p) => p.id === item.id);
+        if (target) {
+          handleSelectProject(target);
+        }
+      }
+    },
+    [collabProjects, projects, handleSelectCollabProject, handleSelectProject]
+  );
+
+  const handleRestoreGuestDraft = useCallback(
+    (draft: GuestDraft) => {
+      setActiveCollabProject(null);
+      setActiveProject(null);
+      setActiveTemplateId(undefined);
+      setProjectTitle(
+        draft.title && draft.title !== 'Bản nháp chưa đặt tên'
+          ? draft.title
+          : 'Dự án chưa đặt tên'
+      );
+      setHtmlCode(draft.htmlCode);
+      setCssCode(draft.cssCode);
+      setJsCode(draft.jsCode);
+      const langs = normalizeLanguages(draft.languages);
+      setActiveLanguages(langs);
+      setRunHiddenTabs({ css: true, js: true });
       setActiveTab('html');
-    }
-    setCloudSaveStatus('saved');
-    setHasUnsavedChanges(false);
-  };
+      const eff = getEffectivePreviewCodes(
+        { html: draft.htmlCode, css: draft.cssCode, js: draft.jsCode },
+        langs,
+        { css: true, js: true }
+      );
+      updatePreviewSnapshot(eff.html, eff.css, eff.js, true);
+      setRefreshTrigger((prev) => prev + 1);
+      setCloudSaveStatus('idle');
+      setHasUnsavedChanges(Boolean(draft.htmlCode || draft.cssCode || draft.jsCode));
+      showToast(`Đã khôi phục bản nháp "${draft.title}"`);
+    },
+    [updatePreviewSnapshot, showToast]
+  );
+
+  const handleDeleteGuestDraft = useCallback(
+    (draftId: string) => {
+      setGuestDrafts(deleteGuestDraft(draftId));
+      showToast('Đã xóa bản nháp');
+    },
+    [showToast]
+  );
 
   // Convert personal project into team project (keeps personal copy until user confirms removal)
   const handleConvertPersonalToCollab = async (personalProj: Project) => {
@@ -1528,8 +1665,11 @@ export default function App() {
     const targetUserId = currentUser?.uid || 'guest';
 
     if (projectModalMode === 'create') {
+      const fromScratch = isSavingScratchToNewProject;
+      setIsSavingScratchToNewProject(false);
+
       // 1. Auto-save current personal project if it has unsaved changes
-      if (hasUnsavedChanges && activeProject && !activeCollabProject) {
+      if (!fromScratch && hasUnsavedChanges && activeProject && !activeCollabProject) {
         try {
           await updateProject(targetUserId, activeProject.id, {
             title: projectTitle,
@@ -1543,8 +1683,10 @@ export default function App() {
         }
       }
 
-      // 2. Starter templates matching selected types
-      const minimalHtml = `<!DOCTYPE html>
+      // 2. Starter templates matching selected types (or current scratch code if triggered by Save button)
+      const minimalHtml = fromScratch
+        ? htmlCode
+        : `<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
@@ -1557,10 +1699,14 @@ export default function App() {
 </body>
 </html>`;
 
-      const cssStarter = formData.languages.includes('css')
+      const cssStarter = fromScratch
+        ? cssCode
+        : formData.languages.includes('css')
         ? `/* Viết mã CSS để tùy biến giao diện tại đây */\n`
         : '';
-      const jsStarter = formData.languages.includes('js')
+      const jsStarter = fromScratch
+        ? jsCode
+        : formData.languages.includes('js')
         ? `// Viết mã JavaScript để tạo tương tác tại đây\n`
         : '';
 
@@ -1577,6 +1723,8 @@ export default function App() {
           jsCode: jsStarter,
         });
         await handleSelectCollabProject(newCollab);
+        localStorage.removeItem(STORAGE_KEYS.TABS_CODE);
+        localStorage.removeItem(STORAGE_KEYS.LEGACY_CODE);
         setIsProjectsPanelOpen(false);
         showToast(`Đã tạo dự án nhóm "${newCollab.title}"`);
         return;
@@ -1602,8 +1750,10 @@ export default function App() {
         setProjects(updatedList);
 
         handleSelectProject(newProj);
+        localStorage.removeItem(STORAGE_KEYS.TABS_CODE);
+        localStorage.removeItem(STORAGE_KEYS.LEGACY_CODE);
         setIsProjectsPanelOpen(false);
-        showToast(`Đã tạo dự án "${newProj.title}"`);
+        showToast(fromScratch ? 'Đã lưu dự án thành công' : `Đã tạo dự án "${newProj.title}"`);
       } catch (err) {
         console.error('Lỗi khi tạo dự án mới:', err);
         throw err;
@@ -1628,8 +1778,17 @@ export default function App() {
         );
         if (activeCollabProject && activeCollabProject.id === targetCollab.id) {
           setProjectTitle(formData.title);
-          setActiveLanguages(formData.languages);
-          if (!formData.languages.includes(activeTab)) {
+          const nextLangs = normalizeLanguages(formData.languages);
+          setActiveLanguages(nextLangs);
+          saveTabViewSettings(
+            getTabViewStorageKey({
+              isSharedView: false,
+              collabProjectId: targetCollab.id,
+              userId: currentUser.uid,
+            }),
+            { languages: nextLangs, runHiddenTabs }
+          );
+          if (!nextLangs.includes(activeTab)) {
             setActiveTab('html');
           }
         }
@@ -1656,20 +1815,29 @@ export default function App() {
         setProjects(updatedList);
 
         if (activeProject && activeProject.id === projId) {
+          const nextLangs = normalizeLanguages(formData.languages);
           setActiveProject((prev) =>
             prev
               ? {
                   ...prev,
                   title: formData.title,
                   description: formData.description,
-                  languages: formData.languages,
+                  languages: nextLangs,
                   updatedAt: new Date().toISOString(),
                 }
               : null
           );
           setProjectTitle(formData.title);
-          setActiveLanguages(formData.languages);
-          if (!formData.languages.includes(activeTab)) {
+          setActiveLanguages(nextLangs);
+          saveTabViewSettings(
+            getTabViewStorageKey({
+              isSharedView: false,
+              projectId: projId,
+              userId: currentUser?.uid,
+            }),
+            { languages: nextLangs, runHiddenTabs }
+          );
+          if (!nextLangs.includes(activeTab)) {
             setActiveTab('html');
           }
         }
@@ -1682,34 +1850,43 @@ export default function App() {
     }
   };
 
-  // Add missing language tab (CSS or JS) to project
+  // Restore / add language tab (CSS or JS) in canonical order without deleting code
   const handleAddLanguage = useCallback(
     async (lang: 'html' | 'css' | 'js') => {
-      if (isEditorReadOnly) return;
+      if (isSharedView) return;
       if (activeLanguages.includes(lang)) {
         setActiveTab(lang);
         return;
       }
-      if (activeCollabProject && !isCollabOwner) {
-        showToast('Chỉ chủ sở hữu mới có thể thay đổi thành phần ngôn ngữ của dự án nhóm');
-        return;
-      }
 
-      const newLangs = [...activeLanguages, lang];
+      const newLangs = normalizeLanguages([...activeLanguages, lang]);
+      const nextRunHidden: RunHiddenTabs =
+        lang === 'css' || lang === 'js'
+          ? { ...runHiddenTabs, [lang]: true }
+          : runHiddenTabs;
+
       setActiveLanguages(newLangs);
+      setRunHiddenTabs(nextRunHidden);
       setActiveTab(lang);
 
-      if (activeCollabProject && isCollabOwner) {
-        try {
-          await updateCollabProjectMeta(activeCollabProject.id, { languages: newLangs });
-          showToast(`Đã thêm tab ${lang.toUpperCase()}`);
-        } catch (err) {
-          console.error('Lỗi khi thêm tab ngôn ngữ dự án nhóm:', err);
-        }
-        return;
-      }
+      saveTabViewSettings(currentTabViewKey, {
+        languages: newLangs,
+        runHiddenTabs: nextRunHidden,
+      });
 
-      if (activeProject) {
+      const eff = getEffectivePreviewCodes(
+        { html: htmlCode, css: cssCode, js: jsCode },
+        newLangs,
+        nextRunHidden
+      );
+      updatePreviewSnapshot(eff.html, eff.css, eff.js, false);
+      setRefreshTrigger((prev) => prev + 1);
+
+      const label = lang === 'css' ? 'CSS' : lang === 'js' ? 'JS' : 'HTML';
+      showToast(`Đã mở lại tab ${label}`);
+
+      // Personal project persists enabled languages to project record; team project keeps visible tabs local per user
+      if (activeProject && !activeCollabProject) {
         try {
           const targetUserId = currentUser?.uid || 'guest';
           await updateProject(targetUserId, activeProject.id, {
@@ -1719,41 +1896,67 @@ export default function App() {
           setProjects((prev) =>
             prev.map((p) => (p.id === activeProject.id ? { ...p, languages: newLangs } : p))
           );
-          showToast(`Đã thêm tab ${lang.toUpperCase()}`);
         } catch (err) {
-          console.error('Lỗi khi thêm tab ngôn ngữ:', err);
+          console.error('Lỗi khi lưu danh sách tab dự án:', err);
         }
       }
     },
-    [activeLanguages, activeProject, activeCollabProject, isCollabOwner, isEditorReadOnly, currentUser, showToast]
+    [
+      isSharedView,
+      activeLanguages,
+      runHiddenTabs,
+      currentTabViewKey,
+      htmlCode,
+      cssCode,
+      jsCode,
+      updatePreviewSnapshot,
+      activeProject,
+      activeCollabProject,
+      currentUser,
+      showToast,
+    ]
   );
 
-  // Execute actual removal of language tab while preserving code
+  // Execute hiding of language tab while ALWAYS preserving code
   const executeRemoveLanguage = useCallback(
-    async (lang: 'css' | 'js') => {
-      if (isEditorReadOnly) return;
-      if (activeCollabProject && !isCollabOwner) {
-        showToast('Chỉ chủ sở hữu mới có thể thay đổi thành phần ngôn ngữ của dự án nhóm');
-        return;
-      }
+    async (lang: 'css' | 'js', keepCodeInPreview: boolean) => {
+      if (isSharedView) return;
 
-      const newLangs = activeLanguages.filter((l) => l !== lang);
+      const newLangs = normalizeLanguages(activeLanguages.filter((l) => l !== lang));
+      const nextRunHidden: RunHiddenTabs = {
+        ...runHiddenTabs,
+        [lang]: keepCodeInPreview,
+      };
+      const nextTab = getNearestVisibleTab(activeLanguages, lang, activeTab);
+
       setActiveLanguages(newLangs);
+      setRunHiddenTabs(nextRunHidden);
       if (activeTab === lang) {
-        setActiveTab('html');
+        setActiveTab(nextTab);
       }
 
-      if (activeCollabProject && isCollabOwner) {
-        try {
-          await updateCollabProjectMeta(activeCollabProject.id, { languages: newLangs });
-          showToast(`Đã ẩn tab ${lang.toUpperCase()} (mã vẫn được giữ nguyên)`);
-        } catch (err) {
-          console.error('Lỗi khi cập nhật tab ngôn ngữ dự án nhóm:', err);
-        }
-        return;
-      }
+      saveTabViewSettings(currentTabViewKey, {
+        languages: newLangs,
+        runHiddenTabs: nextRunHidden,
+      });
 
-      if (activeProject) {
+      const eff = getEffectivePreviewCodes(
+        { html: htmlCode, css: cssCode, js: jsCode },
+        newLangs,
+        nextRunHidden
+      );
+      updatePreviewSnapshot(eff.html, eff.css, eff.js, false);
+      setRefreshTrigger((prev) => prev + 1);
+
+      const label = lang === 'css' ? 'CSS' : 'JS';
+      showToast(
+        keepCodeInPreview
+          ? `Đã ẩn tab ${label} (mã vẫn chạy trong xem trước)`
+          : `Đã ẩn tab ${label} (đã tạm tắt khỏi xem trước)`
+      );
+
+      // Personal project persists enabled languages; team project keeps visible tabs strictly local per user
+      if (activeProject && !activeCollabProject) {
         try {
           const targetUserId = currentUser?.uid || 'guest';
           await updateProject(targetUserId, activeProject.id, {
@@ -1763,39 +1966,37 @@ export default function App() {
           setProjects((prev) =>
             prev.map((p) => (p.id === activeProject.id ? { ...p, languages: newLangs } : p))
           );
-          showToast(`Đã ẩn tab ${lang.toUpperCase()} (mã vẫn được giữ nguyên)`);
         } catch (err) {
           console.error('Lỗi khi cập nhật tab ngôn ngữ:', err);
         }
       }
     },
-    [activeLanguages, activeTab, activeProject, activeCollabProject, isCollabOwner, isEditorReadOnly, currentUser, showToast]
+    [
+      isSharedView,
+      activeLanguages,
+      runHiddenTabs,
+      activeTab,
+      currentTabViewKey,
+      htmlCode,
+      cssCode,
+      jsCode,
+      updatePreviewSnapshot,
+      activeProject,
+      activeCollabProject,
+      currentUser,
+      showToast,
+    ]
   );
 
-  // Request remove language tab with confirmation if code is present
+  // Request hiding language tab via confirmation modal (with option to keep running hidden tab code)
   const handleRequestRemoveLanguage = useCallback(
     (lang: 'css' | 'js') => {
-      if (isEditorReadOnly) return;
-      if (activeCollabProject && !isCollabOwner) {
-        showToast('Chỉ chủ sở hữu mới có thể ẩn tab ngôn ngữ dự án nhóm');
-        return;
-      }
-
-      const currentCode = lang === 'css' ? cssCode : jsCode;
-      const trimmed = currentCode.trim();
-      const hasMeaningfulCode =
-        trimmed.length > 0 &&
-        !trimmed.startsWith('/*') &&
-        !trimmed.startsWith('//');
-
-      if (hasMeaningfulCode) {
-        setPendingRemoveLang(lang);
-        setIsConfirmRemoveTabOpen(true);
-      } else {
-        executeRemoveLanguage(lang);
-      }
+      if (isSharedView) return;
+      setKeepHiddenCodeInPreview(true);
+      setPendingRemoveLang(lang);
+      setIsConfirmRemoveTabOpen(true);
     },
-    [cssCode, jsCode, executeRemoveLanguage, isEditorReadOnly, activeCollabProject, isCollabOwner, showToast]
+    [isSharedView]
   );
 
   // Rename personal project
@@ -1840,18 +2041,15 @@ export default function App() {
       await deleteProject(targetUid, projectId);
       const remaining = projects.filter((p) => p.id !== projectId);
       setProjects(remaining);
+      if (currentUser) {
+        setRecentProjects(removeRecentProject(currentUser.uid, projectId, 'personal'));
+      }
 
       if (activeProject && activeProject.id === projectId) {
         if (remaining.length > 0) {
           handleSelectProject(remaining[0]);
         } else {
-          setActiveProject(null);
-          setProjectTitle('Trang Chào Mừng');
-          setHtmlCode(DEFAULT_HTML_PART);
-          setCssCode(DEFAULT_CSS_PART);
-          setJsCode(DEFAULT_JS_PART);
-          setActiveLanguages(['html', 'css', 'js']);
-          updatePreviewSnapshot(DEFAULT_HTML_PART, DEFAULT_CSS_PART, DEFAULT_JS_PART);
+          resetToBlankEditor();
         }
       }
       showToast('Đã xóa dự án');
@@ -1868,17 +2066,13 @@ export default function App() {
     }
     try {
       await deleteCollabProject(collabProj);
+      setRecentProjects(removeRecentProject(currentUser.uid, collabProj.id, 'collab'));
       if (activeCollabProject?.id === collabProj.id) {
         setActiveCollabProject(null);
         if (projects.length > 0) {
           handleSelectProject(projects[0]);
         } else {
-          setProjectTitle('Trang Chào Mừng');
-          setHtmlCode(DEFAULT_HTML_PART);
-          setCssCode(DEFAULT_CSS_PART);
-          setJsCode(DEFAULT_JS_PART);
-          setActiveLanguages(['html', 'css', 'js']);
-          updatePreviewSnapshot(DEFAULT_HTML_PART, DEFAULT_CSS_PART, DEFAULT_JS_PART);
+          resetToBlankEditor();
         }
       }
       showToast(`Đã xóa dự án nhóm "${collabProj.title}"`);
@@ -1893,17 +2087,13 @@ export default function App() {
     if (!currentUser || collabProj.ownerId === currentUser.uid) return;
     try {
       await leaveCollabProject(collabProj.id, currentUser.uid);
+      setRecentProjects(removeRecentProject(currentUser.uid, collabProj.id, 'collab'));
       if (activeCollabProject?.id === collabProj.id) {
         setActiveCollabProject(null);
         if (projects.length > 0) {
           handleSelectProject(projects[0]);
         } else {
-          setProjectTitle('Trang Chào Mừng');
-          setHtmlCode(DEFAULT_HTML_PART);
-          setCssCode(DEFAULT_CSS_PART);
-          setJsCode(DEFAULT_JS_PART);
-          setActiveLanguages(['html', 'css', 'js']);
-          updatePreviewSnapshot(DEFAULT_HTML_PART, DEFAULT_CSS_PART, DEFAULT_JS_PART);
+          resetToBlankEditor();
         }
       }
       showToast(`Đã rời khỏi dự án nhóm "${collabProj.title}"`);
@@ -1957,13 +2147,9 @@ export default function App() {
     setIsSharedView(false);
     setSharedProjectData(null);
     window.history.replaceState({}, '', window.location.pathname);
+    resetToBlankEditor();
     if (currentUser) {
       loadUserProjectsAndLastActive(currentUser.uid);
-    } else {
-      setHtmlCode(DEFAULT_HTML_PART);
-      setCssCode(DEFAULT_CSS_PART);
-      setJsCode(DEFAULT_JS_PART);
-      setProjectTitle('Trang Chào Mừng');
     }
   };
 
@@ -1998,13 +2184,17 @@ export default function App() {
   const handleJumpToLocation = useCallback(
     (loc: { tab: EditorTab; line: number; col?: number }) => {
       if ((loc.tab === 'css' || loc.tab === 'js') && !activeLanguages.includes(loc.tab)) {
-        setActiveLanguages((prev) => (prev.includes(loc.tab) ? prev : [...prev, loc.tab]));
+        const nextLangs = normalizeLanguages([...activeLanguages, loc.tab]);
+        const nextRunHidden = { ...runHiddenTabs, [loc.tab]: true };
+        setActiveLanguages(nextLangs);
+        setRunHiddenTabs(nextRunHidden);
+        saveTabViewSettings(currentTabViewKey, {
+          languages: nextLangs,
+          runHiddenTabs: nextRunHidden,
+        });
       }
       setActiveTab(loc.tab);
       setMobileTab('code');
-      if (workspacePreset === 'focus-preview') {
-        handleSetWorkspacePreset('split-horizontal');
-      }
       setCursorJumpTarget({
         tab: loc.tab,
         line: loc.line,
@@ -2012,7 +2202,7 @@ export default function App() {
         nonce: Date.now() + Math.random(),
       });
     },
-    [activeLanguages, workspacePreset, handleSetWorkspacePreset]
+    [activeLanguages, runHiddenTabs, currentTabViewKey]
   );
 
   // Keyboard shortcuts (Ctrl+Enter / Cmd+Enter to Run, Ctrl+S to save)
@@ -2029,12 +2219,26 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [htmlCode, cssCode, jsCode, projectTitle, currentUser, activeProject, activeCollabProject, collabProviderInstance, isEditorReadOnly]);
+  }, [htmlCode, cssCode, jsCode, effectivePreviewCodes, projectTitle, currentUser, activeProject, activeCollabProject, collabProviderInstance, isEditorReadOnly]);
 
   // Run manually (Auto-clears console & stale runtime errors on each run)
   const handleRun = useCallback(() => {
-    updatePreviewSnapshot(htmlCode, cssCode, jsCode, false);
+    const isEffectiveEmpty =
+      !effectivePreviewCodes.html &&
+      !effectivePreviewCodes.css &&
+      !effectivePreviewCodes.js;
+
+    updatePreviewSnapshot(
+      effectivePreviewCodes.html,
+      effectivePreviewCodes.css,
+      effectivePreviewCodes.js,
+      isEffectiveEmpty
+    );
     setRefreshTrigger((prev) => prev + 1);
+    if (isEffectiveEmpty) {
+      setConsoleMessages([]);
+      return;
+    }
     setConsoleMessages([
       {
         id: Math.random().toString(36).substring(2, 9),
@@ -2043,7 +2247,7 @@ export default function App() {
         time: new Date().toLocaleTimeString('vi-VN'),
       },
     ]);
-  }, [htmlCode, cssCode, jsCode, updatePreviewSnapshot]);
+  }, [effectivePreviewCodes, updatePreviewSnapshot]);
 
   // Clear code
   const handleConfirmClear = useCallback(() => {
@@ -2065,6 +2269,10 @@ export default function App() {
 
   // Copy combined code
   const handleCopy = useCallback(async () => {
+    if (!htmlCode && !cssCode && !jsCode) {
+      showToast('Chưa có code', 'info');
+      return;
+    }
     const fullCode = combineCode(htmlCode, cssCode, jsCode);
     try {
       await navigator.clipboard.writeText(fullCode);
@@ -2080,38 +2288,52 @@ export default function App() {
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     }
-  }, [htmlCode, cssCode, jsCode]);
+  }, [htmlCode, cssCode, jsCode, showToast]);
 
   // Toggle layout
   const handleToggleLayout = useCallback(() => {
     setLayout((prev) => (prev === 'horizontal' ? 'vertical' : 'horizontal'));
   }, []);
 
+  const applyTemplateImmediately = useCallback(
+    (template: CodeTemplate) => {
+      if (activeCollabProject && collabProviderInstance) {
+        collabProviderInstance.setAllCode({
+          htmlCode: template.htmlCode,
+          cssCode: template.cssCode || '',
+          jsCode: template.jsCode || '',
+        });
+      } else {
+        setHtmlCode(template.htmlCode);
+        setCssCode(template.cssCode || '');
+        setJsCode(template.jsCode || '');
+      }
+      setActiveTemplateId(template.id);
+      setConsoleMessages([]);
+      setRefreshTrigger((prev) => prev + 1);
+      if (!activeCollabProject || isCollabOwner) {
+        setProjectTitle(template.name);
+      }
+      setHasUnsavedChanges(true);
+    },
+    [activeCollabProject, collabProviderInstance, isCollabOwner]
+  );
 
-  // Select sample template
-  const handleSelectTemplate = useCallback((template: CodeTemplate) => {
-    if (isEditorReadOnly) {
-      showToast('Bạn đang ở chế độ chỉ xem, không thể áp dụng mẫu');
-      return;
-    }
-    if (activeCollabProject && collabProviderInstance) {
-      collabProviderInstance.setAllCode({
-        htmlCode: template.htmlCode,
-        cssCode: template.cssCode || '',
-        jsCode: template.jsCode || '',
-      });
-    } else {
-      setHtmlCode(template.htmlCode);
-      setCssCode(template.cssCode || '');
-      setJsCode(template.jsCode || '');
-    }
-    setActiveTemplateId(template.id);
-    setConsoleMessages([]);
-    setRefreshTrigger((prev) => prev + 1);
-    if (!activeCollabProject || isCollabOwner) {
-      setProjectTitle(template.name);
-    }
-  }, [isEditorReadOnly, activeCollabProject, collabProviderInstance, isCollabOwner, showToast]);
+  // Select sample template (confirm before overwriting non-empty code)
+  const handleSelectTemplate = useCallback(
+    (template: CodeTemplate) => {
+      if (isEditorReadOnly) {
+        showToast('Bạn đang ở chế độ chỉ xem, không thể áp dụng mẫu');
+        return;
+      }
+      if (!isCodeEmpty) {
+        setPendingTemplate(template);
+        return;
+      }
+      applyTemplateImmediately(template);
+    },
+    [isEditorReadOnly, isCodeEmpty, applyTemplateImmediately, showToast]
+  );
 
   // Resizer drag
   const handleResize = useCallback(
@@ -2184,6 +2406,16 @@ export default function App() {
     setActiveCollabProject(null);
     setActiveProject(null);
     setActiveLanguages(['html', 'css', 'js']);
+    setRunHiddenTabs({ css: true, js: true });
+    saveTabViewSettings(
+      getTabViewStorageKey({
+        isSharedView: false,
+        collabProjectId: null,
+        projectId: null,
+        userId: currentUser?.uid,
+      }),
+      { languages: ['html', 'css', 'js'], runHiddenTabs: { css: true, js: true } }
+    );
 
     const isPureJs =
       !code.trim().startsWith('<') &&
@@ -2243,6 +2475,16 @@ export default function App() {
   return (
     <>
       <BackgroundLayer isTestPatternActive={isTestPatternActive} />
+      <FpsMeter
+        enabled={isFpsVisible}
+        corner={settings.fpsCorner || 'bottom-right'}
+        isDesktop={isSplitDesktop}
+        hasLeftActivityBar={!isLearningOpen && !isSharedView && isActivityBarVisible}
+        hasMobileBottomNav={!isLearningOpen && !viewport.isKeyboardOpen}
+        isCollabStripVisible={!isLearningOpen && Boolean(activeCollabProject && currentUser && !isSharedView)}
+        isMobileRunVisible={!isLearningOpen && mobileTab === 'preview' && !viewport.isKeyboardOpen}
+        hasSecondaryTopBar={isLearningOpen || !isSplitDesktop}
+      />
 
       <div
         id="app-content-wrapper"
@@ -2277,30 +2519,30 @@ export default function App() {
         </div>
       )}
 
-      {/* Top Header Toolbar (Slim 48px height, hidden in Zen mode) */}
-      {workspacePreset !== 'zen' && (
-        <Header
-          onRun={handleRun}
-          onClear={() => setIsClearModalOpen(true)}
-          onCopy={handleCopy}
-          onOpenDownload={() => setIsDownloadModalOpen(true)}
-          onFormatCode={handleFormatCode}
-          onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
-          isFullscreen={isFullscreen}
-          layout={layout}
-          onToggleLayout={handleToggleLayout}
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          onSelectTemplate={handleSelectTemplate}
-          isCopied={isCopied}
-          activeTemplateId={activeTemplateId}
-          activePreset={workspacePreset}
-          onSetWorkspacePreset={handleSetWorkspacePreset}
-          activeView={isLearningOpen ? 'learn' : 'editor'}
-          onViewChange={(v) => setIsLearningOpen(v === 'learn')}
-          onOpenLearn={() => setIsLearningOpen(true)}
-          onOpenPersonalize={() => setIsPersonalizeOpen(true)}
-          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+      {/* Top Header Toolbar (Slim 48px height) */}
+      <Header
+        onRun={handleRun}
+        onClear={() => setIsClearModalOpen(true)}
+        onCopy={handleCopy}
+        onOpenDownload={() => {
+          if (!isCodeEmpty) setIsDownloadModalOpen(true);
+        }}
+        onFormatCode={handleFormatCode}
+        layout={layout}
+        onToggleLayout={handleToggleLayout}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        onSelectTemplate={handleSelectTemplate}
+        isCopied={isCopied}
+        isCodeEmpty={isCodeEmpty}
+        activeTemplateId={activeTemplateId}
+        activePreset={workspacePreset}
+        onSetWorkspacePreset={handleSetWorkspacePreset}
+        activeView={isLearningOpen ? 'learn' : 'editor'}
+        onViewChange={(v) => setIsLearningOpen(v === 'learn')}
+        onOpenLearn={() => setIsLearningOpen(true)}
+        onOpenPersonalize={() => setIsPersonalizeOpen(true)}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           currentProjectTitle={projectTitle}
           currentProjectDescription={activeCollabProject?.description || activeProject?.description}
           onUpdateProjectTitle={(t) => {
@@ -2351,7 +2593,6 @@ export default function App() {
           hideOwnCursor={hideOwnCursor}
           onToggleHideOwnCursor={handleToggleHideOwnCursor}
         />
-      )}
 
       {/* Connection-lost calm banner for collaborative projects */}
       {activeCollabProject &&
@@ -2413,42 +2654,40 @@ export default function App() {
       )}
 
       {/* Mobile Mode Tabs (<768px): Code | Xem trước */}
-      {workspacePreset !== 'zen' && (
-        <div className="md:hidden min-h-[44px] py-1 pl-[max(0.75rem,var(--safe-left))] pr-[max(0.75rem,var(--safe-right))] bg-elevated border-b border-subtle flex items-center justify-between gap-2 flex-shrink-0 z-20">
-          <div className="touch-gap inline-flex p-0.5 bg-[var(--border-subtle)] rounded-[var(--radius-sm)] border border-default text-xs font-medium">
-            <button
-              type="button"
-              onClick={() => setMobileTab('code')}
-              className={`touch-target-h px-3.5 py-1 rounded-[calc(var(--radius-sm)-2px)] transition-all cursor-pointer ${
-                mobileTab === 'code'
-                  ? 'bg-accent text-accent-on shadow-xs font-semibold'
-                  : 'text-secondary hover:text-primary'
-              }`}
-            >
-              Code
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileTab('preview')}
-              className={`touch-target-h px-3.5 py-1 rounded-[calc(var(--radius-sm)-2px)] transition-all cursor-pointer ${
-                mobileTab === 'preview'
-                  ? 'bg-accent text-accent-on shadow-xs font-semibold'
-                  : 'text-secondary hover:text-primary'
-              }`}
-            >
-              Xem trước
-            </button>
-          </div>
-          <span className="text-[11px] text-muted font-mono truncate">
-            {mobileTab === 'code' ? `Tab: ${activeTab.toUpperCase()}` : 'Xem trước trực tiếp'}
-          </span>
+      <div className="md:hidden min-h-[44px] py-1 pl-[max(0.75rem,var(--safe-left))] pr-[max(0.75rem,var(--safe-right))] bg-elevated border-b border-subtle flex items-center justify-between gap-2 flex-shrink-0 z-20">
+        <div className="touch-gap inline-flex p-0.5 bg-[var(--border-subtle)] rounded-[var(--radius-sm)] border border-default text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => setMobileTab('code')}
+            className={`touch-target-h px-3.5 py-1 rounded-[calc(var(--radius-sm)-2px)] transition-all cursor-pointer ${
+              mobileTab === 'code'
+                ? 'bg-accent text-accent-on shadow-xs font-semibold'
+                : 'text-secondary hover:text-primary'
+            }`}
+          >
+            Code
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('preview')}
+            className={`touch-target-h px-3.5 py-1 rounded-[calc(var(--radius-sm)-2px)] transition-all cursor-pointer ${
+              mobileTab === 'preview'
+                ? 'bg-accent text-accent-on shadow-xs font-semibold'
+                : 'text-secondary hover:text-primary'
+            }`}
+          >
+            Xem trước
+          </button>
         </div>
-      )}
+        <span className="text-[11px] text-muted font-mono truncate">
+          {mobileTab === 'code' ? `Tab: ${activeTab.toUpperCase()}` : 'Xem trước trực tiếp'}
+        </span>
+      </div>
 
       {/* Main Body with Activity Bar + Workspaces */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative min-h-0">
         {/* Activity Bar on Left (Desktop/Tablet >=768px) or Bottom Bar (<768px) */}
-        {workspacePreset !== 'zen' && isActivityBarVisible && (
+        {isActivityBarVisible && (
           <ActivityBar
             activeView={isLearningOpen ? 'learn' : 'editor'}
             onViewChange={(v) => setIsLearningOpen(v === 'learn')}
@@ -2468,123 +2707,114 @@ export default function App() {
         <div
           ref={containerRef}
           className={`flex-1 flex min-w-0 min-h-0 overflow-hidden relative order-1 md:order-2 ${
-            isFullscreen || workspacePreset === 'focus-preview'
-              ? 'flex-col'
-              : layout === 'horizontal' && workspacePreset !== 'focus-code' && workspacePreset !== 'zen'
-              ? 'flex-col md:flex-row'
-              : 'flex-col'
+            layout === 'horizontal' ? 'flex-col md:flex-row' : 'flex-col'
           }`}
         >
           {/* Editor Pane (Left or Top) */}
-          {(!isSplitDesktop ? workspacePreset !== 'zen' : !isFullscreen && workspacePreset !== 'focus-preview') && (
-            <div
-              style={
-                !isSplitDesktop || workspacePreset === 'focus-code' || workspacePreset === 'zen'
-                  ? { flex: '1 1 100%', minWidth: 0, minHeight: 0 }
-                  : {
-                      flex: `0 0 ${splitRatio * 100}%`,
-                      minWidth: layout === 'horizontal' ? (viewport.width < 1024 ? '190px' : '240px') : 0,
-                      minHeight: layout === 'vertical' ? '140px' : 0,
-                    }
-              }
-              className={`flex-col overflow-hidden transition-[flex-basis] duration-75 relative z-10 min-w-0 min-h-0 ${
-                mobileTab === 'preview' && workspacePreset !== 'zen' ? 'hidden md:flex' : 'flex'
-              }`}
-            >
-              <EditorPane
-                activeTab={activeTab}
-                onTabChange={handleEditorTabChange}
-                htmlCode={htmlCode}
-                cssCode={cssCode}
-                jsCode={jsCode}
-                onHtmlChange={setHtmlCode}
-                onCssChange={setCssCode}
-                onJsChange={setJsCode}
-                theme={theme}
-                onFormatCode={handleFormatCode}
-                isReadOnly={isEditorReadOnly}
-                readOnlyBadgeText={isCollabViewer ? 'Chế độ chỉ xem' : 'Chỉ đọc'}
-                enabledLanguages={activeLanguages}
-                onAddLanguage={handleAddLanguage}
-                onRemoveLanguage={handleRequestRemoveLanguage}
-                collabProjectId={activeCollabProject?.id}
-                collabYDoc={collabProviderInstance?.ydoc ?? null}
-                collabSyncReady={collabDocReady}
-                collabUndoManagers={collabProviderInstance?.undoManagers ?? null}
-                onlineUsers={onlineUsers}
-                remoteSessions={remoteSessions}
-                currentUserId={currentUser?.uid || ''}
-                followingUser={followingUser}
-                onStopFollowing={() => setFollowingUid(null)}
-                jumpTarget={jumpTarget}
-                cursorJumpTarget={cursorJumpTarget}
-                appliedHighlightTarget={appliedHighlightTarget}
-                remoteInsertFlashes={remoteInsertFlashes}
-                onLocalCursorChange={handleLocalCursorChange}
-                onLocalTyping={handleLocalTyping}
-                onLocalInteraction={handleLocalEditorInteraction}
-                hideRemoteCursors={hideRemoteCursors}
-                onCompositionChange={handleCompositionChange}
-                lineComments={collabLineComments}
-                projectOwnerId={activeCollabProject?.ownerId || ''}
-                onAddLineComment={handleAddLineComment}
-                onReplyLineComment={handleReplyLineComment}
-                onToggleResolveLineComment={handleToggleResolveLineComment}
-                onDeleteLineComment={handleDeleteLineComment}
-              />
-            </div>
-          )}
+          <div
+            style={
+              !isSplitDesktop
+                ? { flex: '1 1 100%', minWidth: 0, minHeight: 0 }
+                : {
+                    flex: `0 0 ${splitRatio * 100}%`,
+                    minWidth: layout === 'horizontal' ? (viewport.width < 1024 ? '190px' : '240px') : 0,
+                    minHeight: layout === 'vertical' ? '140px' : 0,
+                  }
+            }
+            className={`flex-col overflow-hidden transition-[flex-basis] duration-75 relative z-10 min-w-0 min-h-0 ${
+              mobileTab === 'preview' ? 'hidden md:flex' : 'flex'
+            }`}
+          >
+            <EditorPane
+              activeTab={activeTab}
+              onTabChange={handleEditorTabChange}
+              htmlCode={htmlCode}
+              cssCode={cssCode}
+              jsCode={jsCode}
+              onHtmlChange={setHtmlCode}
+              onCssChange={setCssCode}
+              onJsChange={setJsCode}
+              theme={theme}
+              onFormatCode={handleFormatCode}
+              isReadOnly={isEditorReadOnly}
+              canCustomizeTabs={!isSharedView}
+              readOnlyBadgeText={isCollabViewer ? 'Chế độ chỉ xem' : 'Chỉ đọc'}
+              enabledLanguages={activeLanguages}
+              onAddLanguage={handleAddLanguage}
+              onRemoveLanguage={handleRequestRemoveLanguage}
+              autoFocusDesktop={!isSharedView && !isLearningOpen}
+              collabProjectId={activeCollabProject?.id}
+              collabYDoc={collabProviderInstance?.ydoc ?? null}
+              collabSyncReady={collabDocReady}
+              collabUndoManagers={collabProviderInstance?.undoManagers ?? null}
+              onlineUsers={onlineUsers}
+              remoteSessions={remoteSessions}
+              currentUserId={currentUser?.uid || ''}
+              followingUser={followingUser}
+              onStopFollowing={() => setFollowingUid(null)}
+              jumpTarget={jumpTarget}
+              cursorJumpTarget={cursorJumpTarget}
+              appliedHighlightTarget={appliedHighlightTarget}
+              remoteInsertFlashes={remoteInsertFlashes}
+              onLocalCursorChange={handleLocalCursorChange}
+              onLocalTyping={handleLocalTyping}
+              onLocalInteraction={handleLocalEditorInteraction}
+              hideRemoteCursors={hideRemoteCursors}
+              onCompositionChange={handleCompositionChange}
+              lineComments={collabLineComments}
+              projectOwnerId={activeCollabProject?.ownerId || ''}
+              onAddLineComment={handleAddLineComment}
+              onReplyLineComment={handleReplyLineComment}
+              onToggleResolveLineComment={handleToggleResolveLineComment}
+              onDeleteLineComment={handleDeleteLineComment}
+            />
+          </div>
 
           {/* Draggable Resizer (Desktop only in split view) */}
-          {!isFullscreen && workspacePreset !== 'focus-code' && workspacePreset !== 'focus-preview' && workspacePreset !== 'zen' && (
-            <div className="hidden md:flex flex-shrink-0">
-              <Resizer layout={layout} theme={theme} onResize={handleResize} />
-            </div>
-          )}
+          <div className="hidden md:flex flex-shrink-0">
+            <Resizer layout={layout} theme={theme} onResize={handleResize} />
+          </div>
 
           {/* Preview Pane (Right or Bottom) */}
-          {(!isSplitDesktop ? workspacePreset !== 'zen' : workspacePreset !== 'focus-code' && workspacePreset !== 'zen') && (
-            <div
-              style={
-                !isSplitDesktop || isFullscreen || workspacePreset === 'focus-preview'
-                  ? { flex: '1 1 100%', minWidth: 0, minHeight: 0 }
-                  : {
-                      flex: `0 0 ${(1 - splitRatio) * 100}%`,
-                      minWidth: !isFullscreen && layout === 'horizontal' ? (viewport.width < 1024 ? '190px' : '240px') : 0,
-                      minHeight: !isFullscreen && layout === 'vertical' ? '160px' : 0,
-                    }
-              }
-              className={`flex-col flex-1 overflow-hidden relative z-10 min-w-0 min-h-0 ${
-                mobileTab === 'code' ? 'hidden md:flex' : 'flex'
-              }`}
-            >
-              <PreviewPane
-                compiledSrcDoc={compiledPreview.srcDoc}
-                sourceMap={compiledPreview.sourceMap}
-                channelToken={compiledPreview.token}
-                previewCodes={previewSnapshot}
-                theme={theme}
-                onRefresh={handleRun}
-                isFullscreen={isFullscreen}
-                onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
-                refreshTrigger={refreshTrigger}
-                consoleMessages={consoleMessages}
-                staticIssues={staticIssues}
-                onRuntimeMessage={handleRuntimeMessage}
-                onClearConsole={() => setConsoleMessages([])}
-                onJumpToLocation={handleJumpToLocation}
-                isCollabMode={Boolean(activeCollabProject && !isSharedView)}
-                syncPreviewEnabled={syncPreviewEnabled}
-                onToggleSyncPreview={() => setSyncPreviewEnabled((prev) => !prev)}
-                syncedPreviewState={syncedPreviewState}
-                currentUserId={currentUser?.uid || ''}
-                onPublishPreviewSync={handlePublishPreviewSync}
-              />
-            </div>
-          )}
+          <div
+            style={
+              !isSplitDesktop
+                ? { flex: '1 1 100%', minWidth: 0, minHeight: 0 }
+                : {
+                    flex: `0 0 ${(1 - splitRatio) * 100}%`,
+                    minWidth: layout === 'horizontal' ? (viewport.width < 1024 ? '190px' : '240px') : 0,
+                    minHeight: layout === 'vertical' ? '160px' : 0,
+                  }
+            }
+            className={`flex-col flex-1 overflow-hidden relative z-10 min-w-0 min-h-0 ${
+              mobileTab === 'code' ? 'hidden md:flex' : 'flex'
+            }`}
+          >
+            <PreviewPane
+              compiledSrcDoc={compiledPreview.srcDoc}
+              sourceMap={compiledPreview.sourceMap}
+              channelToken={compiledPreview.token}
+              previewCodes={previewSnapshot}
+              isEmptyPreview={isPreviewEmpty}
+              theme={theme}
+              onRefresh={handleRun}
+              refreshTrigger={refreshTrigger}
+              consoleMessages={consoleMessages}
+              staticIssues={staticIssues}
+              onRuntimeMessage={handleRuntimeMessage}
+              onClearConsole={() => setConsoleMessages([])}
+              onJumpToLocation={handleJumpToLocation}
+              isCollabMode={Boolean(activeCollabProject && !isSharedView)}
+              syncPreviewEnabled={syncPreviewEnabled}
+              onToggleSyncPreview={() => setSyncPreviewEnabled((prev) => !prev)}
+              syncedPreviewState={syncedPreviewState}
+              currentUserId={currentUser?.uid || ''}
+              onPublishPreviewSync={handlePublishPreviewSync}
+            />
+          </div>
 
           {/* Floating Run Button on Mobile Preview */}
-          {mobileTab === 'preview' && workspacePreset !== 'zen' && !viewport.isKeyboardOpen && (
+          {mobileTab === 'preview' && !viewport.isKeyboardOpen && (
             <button
               onClick={handleRun}
               className="md:hidden fixed bottom-[calc(4.5rem+var(--safe-bottom))] right-[calc(1rem+var(--safe-right))] z-40 w-12 h-12 rounded-full bg-success hover:opacity-95 text-white shadow-[var(--shadow-elevated)] flex items-center justify-center active:scale-95 transition-all focus:outline-none cursor-pointer"
@@ -2594,35 +2824,10 @@ export default function App() {
               <Play className="w-5 h-5 fill-current ml-0.5" strokeWidth={1.5} />
             </button>
           )}
-
-          {/* Zen Mode Minimal Floating Bar */}
-          {workspacePreset === 'zen' && (
-            <div className="touch-gap fixed bottom-[calc(1.25rem+var(--safe-bottom))] right-[calc(1.25rem+var(--safe-right))] z-50 flex items-center gap-1.5 p-1 bg-elevated/95 backdrop-blur-md border border-default rounded-[var(--radius-sm)] shadow-[var(--shadow-elevated)] animate-in fade-in duration-200">
-              <button
-                onClick={handleRun}
-                className="touch-target h-7 px-3 text-xs font-semibold text-white bg-success hover:opacity-95 rounded-[calc(var(--radius-sm)-2px)] flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                title="Chạy lại mã"
-                aria-label="Chạy lại mã"
-              >
-                <Play className="w-3.5 h-3.5 fill-current" strokeWidth={1.5} />
-                <span>Chạy</span>
-              </button>
-              <button
-                onClick={() => handleSetWorkspacePreset('split-horizontal')}
-                className="touch-target h-7 px-2.5 text-xs font-medium text-secondary hover:text-primary hover:bg-[var(--border-subtle)] rounded-[calc(var(--radius-sm)-2px)] flex items-center gap-1.5 cursor-pointer"
-                title="Thoát chế độ Zen"
-                aria-label="Thoát chế độ Zen"
-              >
-                <Minimize2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                <span>Thoát Zen</span>
-                <Kbd>ESC</Kbd>
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Mobile credit strip above mobile bottom nav */}
-        {workspacePreset !== 'zen' && !viewport.isKeyboardOpen && (
+        {!viewport.isKeyboardOpen && (
           <div className="md:hidden order-2 h-6 px-3 bg-elevated/90 glass-panel border-t border-subtle flex items-center justify-center text-[11px] text-muted select-none flex-shrink-0">
             <span className="truncate">Được tạo bởi tổ 4 — 12C6 — 2024-2027</span>
           </div>
@@ -2639,6 +2844,23 @@ export default function App() {
         isDangerous={true}
         onConfirm={handleConfirmClear}
         onCancel={() => setIsClearModalOpen(false)}
+      />
+
+      {/* Confirmation Modal for Overwriting Non-Empty Editor with Template */}
+      <ConfirmModal
+        isOpen={!!pendingTemplate}
+        title={`Áp dụng mẫu "${pendingTemplate?.name || ''}"?`}
+        message="Mã nguồn hiện tại trong trình soạn thảo sẽ bị thay thế bởi mẫu này."
+        confirmText="Áp dụng mẫu"
+        cancelText="Hủy bỏ"
+        isDangerous={false}
+        onConfirm={() => {
+          if (pendingTemplate) {
+            applyTemplateImmediately(pendingTemplate);
+            setPendingTemplate(null);
+          }
+        }}
+        onCancel={() => setPendingTemplate(null)}
       />
 
       {/* Authentication Modal */}
@@ -2682,6 +2904,11 @@ export default function App() {
         error={projectsLoadError}
         isGuest={!currentUser}
         onOpenAuth={() => openAuth('login')}
+        guestDrafts={guestDrafts}
+        onRestoreDraft={handleRestoreGuestDraft}
+        onDeleteDraft={handleDeleteGuestDraft}
+        recentProjects={recentProjects}
+        onOpenRecentProject={handleOpenRecentProject}
         onRetry={() => {
           if (currentUser) {
             loadUserProjectsAndLastActive(currentUser.uid);
@@ -2715,11 +2942,15 @@ export default function App() {
         onNewProject={() => handleOpenNewProjectModal('personal')}
         onFormatCode={handleFormatCode}
         onCopy={handleCopy}
-        onDownload={() => setIsDownloadModalOpen(true)}
+        onDownload={() => {
+          if (!isCodeEmpty) setIsDownloadModalOpen(true);
+        }}
         onShare={() => setIsShareModalOpen(true)}
         onClear={() => setIsClearModalOpen(true)}
         onToggleTheme={handleToggleTheme}
         theme={theme}
+        onToggleFps={handleToggleFps}
+        isFpsVisible={isFpsVisible}
         onSetWorkspacePreset={handleSetWorkspacePreset}
         activePreset={workspacePreset}
         onToggleActivityBar={handleToggleActivityBar}
@@ -2730,6 +2961,7 @@ export default function App() {
         onOpenLearn={() => setIsLearningOpen(true)}
         projects={projects}
         onSelectProject={handleSelectProject}
+        isCodeEmpty={isCodeEmpty}
       />
 
       {/* Project Creation & Edit Modal */}
@@ -2737,15 +2969,21 @@ export default function App() {
         isOpen={isProjectModalOpen}
         onClose={() => {
           setIsProjectModalOpen(false);
+          setIsSavingScratchToNewProject(false);
           setEditingProject(null);
           setEditingCollabProject(null);
         }}
         mode={projectModalMode}
         defaultProjectType={defaultNewProjectType}
         initialData={
-          editingCollabProject ||
-          editingProject ||
-          (projectModalMode === 'edit' ? activeCollabProject || activeProject : null)
+          isSavingScratchToNewProject
+            ? {
+                title: projectTitle !== 'Dự án chưa đặt tên' ? projectTitle : '',
+                languages: activeLanguages,
+              }
+            : editingCollabProject ||
+              editingProject ||
+              (projectModalMode === 'edit' ? activeCollabProject || activeProject : null)
         }
         existingProjects={projects}
         onSubmit={handleProjectFormSubmit}
@@ -2817,19 +3055,24 @@ export default function App() {
         onCancel={() => setPendingRemovePersonalAfterConvert(null)}
       />
 
-      {/* Confirmation Modal for Removing Language Tab */}
+      {/* Confirmation Modal for Hiding Language Tab */}
       <ConfirmModal
         isOpen={isConfirmRemoveTabOpen}
         title={`Ẩn tab ${pendingRemoveLang === 'css' ? 'CSS' : 'JavaScript'}?`}
-        message={`Mã nguồn trong tab ${
+        message={`Tab ${
           pendingRemoveLang === 'css' ? 'CSS' : 'JavaScript'
-        } của bạn vẫn được lưu giữ nguyên vẹn và an toàn. Bạn có thể mở lại bất cứ lúc nào qua nút "+".`}
+        } sẽ được ẩn khỏi thanh tab nhưng mã nguồn bên trong vẫn được giữ nguyên vẹn. Bạn có thể mở lại bất cứ lúc nào qua nút "+".`}
         confirmText="Ẩn tab"
         cancelText="Giữ lại"
         isDangerous={false}
+        checkbox={{
+          label: 'Vẫn dùng code của tab này khi chạy',
+          checked: keepHiddenCodeInPreview,
+          onChange: setKeepHiddenCodeInPreview,
+        }}
         onConfirm={() => {
           if (pendingRemoveLang) {
-            executeRemoveLanguage(pendingRemoveLang);
+            executeRemoveLanguage(pendingRemoveLang, keepHiddenCodeInPreview);
             setPendingRemoveLang(null);
           }
           setIsConfirmRemoveTabOpen(false);
@@ -2880,9 +3123,6 @@ export default function App() {
         projectTitle={projectTitle}
       />
 
-      {/* Dev Token Inspector */}
-      <TokenInspectorModal />
-
       {/* Team Chat Strip (Stage 4) */}
       {activeCollabProject && currentUser && !isSharedView && (
         <CollabChatStrip
@@ -2894,7 +3134,6 @@ export default function App() {
           onToggleSound={handleToggleChatSound}
           onSendMessage={handleSendChatMessage}
           onDeleteMessage={handleDeleteChatMessage}
-          hidden={workspacePreset === 'zen'}
           isKeyboardOpen={viewport.isKeyboardOpen}
           liftAboveMobileRun={mobileTab === 'preview' && !isSplitDesktop}
         />
@@ -2903,18 +3142,16 @@ export default function App() {
         )}
 
         {/* Global Website Credit Footer */}
-        {(isLearningOpen || workspacePreset !== 'zen') && (
-          <footer
-            role="contentinfo"
-            className={`${
-              isLearningOpen
-                ? 'flex min-h-[calc(24px+var(--safe-bottom))] pb-safe'
-                : 'hidden md:flex h-6'
-            } px-4 bg-elevated glass-panel border-t border-subtle items-center justify-center text-[11px] text-muted select-none flex-shrink-0 z-20`}
-          >
-            <span className="truncate">Được tạo bởi tổ 4 — 12C6 — 2024-2027</span>
-          </footer>
-        )}
+        <footer
+          role="contentinfo"
+          className={`${
+            isLearningOpen
+              ? 'flex min-h-[calc(24px+var(--safe-bottom))] pb-safe'
+              : 'hidden md:flex h-6'
+          } px-4 bg-elevated glass-panel border-t border-subtle items-center justify-center text-[11px] text-muted select-none flex-shrink-0 z-20`}
+        >
+          <span className="truncate">Được tạo bởi tổ 4 — 12C6 — 2024-2027</span>
+        </footer>
       </div>
     </>
   );

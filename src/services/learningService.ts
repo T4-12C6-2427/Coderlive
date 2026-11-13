@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 
-const GUEST_STORAGE_PREFIX = 'htmlive_completed_lessons';
+const GUEST_STORAGE_PREFIX = 'coderlive_completed_lessons';
 
 /**
  * Lấy danh sách ID các bài học đã hoàn thành theo từng khóa học ('html', 'css', 'js')

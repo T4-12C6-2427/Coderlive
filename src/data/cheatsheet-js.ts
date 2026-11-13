@@ -103,7 +103,7 @@ try {
     example: {
       kind: 'console',
       code: `console.log("Số:", typeof 42);
-console.log("Chuỗi chữ:", typeof "Xin chào HTMLive");
+console.log("Chuỗi chữ:", typeof "Xin chào Coderlive");
 console.log("Đúng/Sai:", typeof true);
 console.log("Chưa xác định:", typeof undefined);
 console.log("Mảng danh sách:", typeof [1, 2, 3]);
@@ -264,17 +264,17 @@ console.log("Không đủ tuổi (!duTuoi):", !duTuoi);`,
     syntax: 'str.includes(từKhóa), str.slice(từ, đến)',
     example: {
       kind: 'console',
-      code: `const email = "contact@htmlive.dev";
+      code: `const email = "contact@coderlive.dev";
 
-console.log("Chứa đuôi @htmlive.dev:", email.includes("@htmlive.dev"));
+console.log("Chứa đuôi @coderlive.dev:", email.includes("@coderlive.dev"));
 console.log("Vị trí dấu @:", email.indexOf("@"));
 console.log("Tên người dùng (cắt chuỗi):", email.slice(0, 7));
 console.log("Chữ in hoa:", email.toUpperCase());`,
       expectedOutput: [
-        'Chứa đuôi @htmlive.dev: true',
+        'Chứa đuôi @coderlive.dev: true',
         'Vị trí dấu @: 7',
         'Tên người dùng (cắt chuỗi): contact',
-        'Chữ in hoa: CONTACT@HTMLIVE.DEV',
+        'Chữ in hoa: CONTACT@CODERLIVE.DEV',
       ],
       steps: [
         {
@@ -832,7 +832,7 @@ console.log("Danh sách class hiện tại:", hopThongBao.className);`,
   .da-doc { opacity: 0.8; }
 </style>
 <div id="hop-tb" style="padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-family:sans-serif;">
-  Thông báo mới từ hệ thống HTMLive
+  Thông báo mới từ hệ thống Coderlive
 </div>`,
       expectedOutput: [
         'Có chứa class noi-bat? true',

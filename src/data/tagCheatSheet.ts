@@ -29,7 +29,7 @@ export const TAG_CHEAT_SHEET: TagCheatItem[] = [
     name: 'Tiêu đề trang',
     category: 'Cấu trúc',
     description: 'Hiển thị trên tab trình duyệt và kết quả tìm kiếm Google.',
-    example: '<title>Trang Web HTMLive</title>',
+    example: '<title>Trang Web Coderlive</title>',
   },
   {
     tag: '<meta>',
@@ -104,7 +104,7 @@ export const TAG_CHEAT_SHEET: TagCheatItem[] = [
     name: 'Chữ nhỏ chú thích',
     category: 'Văn bản',
     description: 'Giảm kích thước chữ, thường dùng cho chú thích bản quyền.',
-    example: '<small>© 2026 Bản quyền thuộc về HTMLive</small>',
+    example: '<small>© 2026 Bản quyền thuộc về Coderlive</small>',
   },
   {
     tag: '<sub>',
@@ -275,7 +275,7 @@ export const TAG_CHEAT_SHEET: TagCheatItem[] = [
     name: 'Chân trang',
     category: 'Ngữ nghĩa',
     description: 'Chứa bản quyền tác giả, thông tin liên hệ và chính sách.',
-    example: '<footer>\n  <p>© 2026 HTMLive</p>\n</footer>',
+    example: '<footer>\n  <p>© 2026 Coderlive</p>\n</footer>',
   },
   {
     tag: '<div>',

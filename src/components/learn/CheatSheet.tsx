@@ -84,22 +84,22 @@ export const CheatSheet: React.FC<CheatSheetProps> = ({ course, onOpenInEditor }
 
   // Persisted search and category state
   const [selectedCategory, setSelectedCategory] = useState<string>(() => {
-    return localStorage.getItem(`htmlive_cheatsheet_${course}_cat`) || 'Tất cả';
+    return localStorage.getItem(`coderlive_cheatsheet_${course}_cat`) || 'Tất cả';
   });
 
   const [searchQuery, setSearchQuery] = useState<string>(() => {
-    return localStorage.getItem(`htmlive_cheatsheet_${course}_search`) || '';
+    return localStorage.getItem(`coderlive_cheatsheet_${course}_search`) || '';
   });
 
   const [activeModalEntry, setActiveModalEntry] = useState<CheatEntry | null>(null);
 
   // Sync state to localStorage
   useEffect(() => {
-    localStorage.setItem(`htmlive_cheatsheet_${course}_cat`, selectedCategory);
+    localStorage.setItem(`coderlive_cheatsheet_${course}_cat`, selectedCategory);
   }, [selectedCategory, course]);
 
   useEffect(() => {
-    localStorage.setItem(`htmlive_cheatsheet_${course}_search`, searchQuery);
+    localStorage.setItem(`coderlive_cheatsheet_${course}_search`, searchQuery);
   }, [searchQuery, course]);
 
   // Support deep links like #tra-cuu/js/let or #tra-cuu/html/head

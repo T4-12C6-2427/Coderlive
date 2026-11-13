@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { ref, onValue } from 'firebase/database';
-import { auth, db, rtdb, firebaseConfig, isFirebaseConfigValid } from './firebase';
+import { auth, db, rtdb, rtdbUrl, normalizeRealtimeDatabaseUrl, firebaseConfig, isFirebaseConfigValid } from './firebase';
 import { User } from 'firebase/auth';
 
 export interface CloudCheckItem {
@@ -40,15 +40,16 @@ export async function runCloudDiagnostic(currentUser: User | null): Promise<Clou
   const hasAppId = Boolean((firebaseConfig as any)?.appId);
 
   const envRtdbUrl = String((import.meta as any).env?.VITE_FIREBASE_DATABASE_URL || '').trim();
+  const hasInvalidEnvRtdbUrl = Boolean(envRtdbUrl) && !normalizeRealtimeDatabaseUrl(envRtdbUrl);
   const configRtdbUrl = String(firebaseConfig?.databaseURL || '').trim();
-  const configuredRtdbUrl = envRtdbUrl || configRtdbUrl;
+  const configuredRtdbUrl = rtdbUrl || '';
 
   if (isFirebaseConfigValid && hasApiKey && hasAuthDomain && hasProjectId && hasAppId) {
     checks.push({
       id: 'config',
       name: 'Cấu hình Firebase (firebase-applet-config.json)',
       status: 'success',
-      details: `Đầy đủ: apiKey, authDomain, projectId (${projectId}), appId${configRtdbUrl ? ', databaseURL' : ''}.`,
+      details: `Đầy đủ: apiKey, authDomain, projectId (${projectId}), appId${configuredRtdbUrl || configRtdbUrl ? ', databaseURL' : ''}.`,
     });
   } else {
     const missing: string[] = [];
@@ -290,10 +291,11 @@ export async function runCloudDiagnostic(currentUser: User | null): Promise<Clou
       id: 'rtdb_connection',
       name: 'Firebase Realtime Database (Hiện diện trực tuyến)',
       status: 'warning',
-      details:
-        'Chưa cấu hình URL Realtime Database (VITE_FIREBASE_DATABASE_URL hoặc databaseURL). Các dự án nhóm vẫn đồng bộ mã qua Firestore, nhưng con trỏ & danh sách trực tuyến cần Realtime Database.',
+      details: hasInvalidEnvRtdbUrl
+        ? 'Biến môi trường VITE_FIREBASE_DATABASE_URL đang chứa liên kết không hợp lệ (ví dụ URL trang quản trị Console thay vì URL gốc *.firebasedatabase.app).'
+        : 'Chưa cấu hình URL Realtime Database (VITE_FIREBASE_DATABASE_URL hoặc databaseURL). Các dự án nhóm vẫn đồng bộ mã qua Firestore, nhưng con trỏ & danh sách trực tuyến cần Realtime Database.',
       recommendation:
-        'Bật Realtime Database trong Firebase Console, dán Rules từ database.rules.json, rồi thêm VITE_FIREBASE_DATABASE_URL vào tệp .env.',
+        'Dùng URL gốc dạng https://<project>-default-rtdb.<region>.firebasedatabase.app (không kèm đường dẫn con) trong firebase-applet-config.json hoặc VITE_FIREBASE_DATABASE_URL.',
     });
   } else {
     const connected = await new Promise<boolean>((resolve) => {
@@ -364,7 +366,7 @@ export async function runCloudDiagnostic(currentUser: User | null): Promise<Clou
   // Tạo nội dung báo cáo văn bản để sao chép
   const reportLines = [
     '========================================',
-    'BÁO CÁO KIỂM TRA KẾT NỐI ĐÁM MÂY (HTMLive)',
+    'BÁO CÁO KIỂM TRA KẾT NỐI ĐÁM MÂY (Coderlive)',
     '========================================',
     `Thời gian kiểm tra: ${now}`,
     `Tên miền hiện tại: ${currentDomain}`,

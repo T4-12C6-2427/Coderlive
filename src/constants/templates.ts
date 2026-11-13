@@ -1,8 +1,8 @@
 import { CodeTemplate } from '../types';
 
 export const DEFAULT_HTML_PART = `<div class="card">
-  <div class="badge">🚀 HTMLive Web Studio</div>
-  <h1>Chào mừng bạn đến với HTMLive!</h1>
+  <div class="badge">🚀 Coderlive Web Studio</div>
+  <h1>Chào mừng bạn đến với Coderlive!</h1>
   <p>Chỉnh sửa các tab HTML, CSS và JavaScript riêng biệt ở bên trái. Bạn sẽ thấy kết quả thay đổi tức thì tại đây!</p>
   
   <div class="btn-group">
@@ -185,7 +185,7 @@ colorBtn.addEventListener('click', () => {
   console.log('Đã đổi màu nền sang kiểu số ' + (gradIndex + 1));
 });
 
-console.log('Trang web HTMLive đã tải thành công với 3 tab riêng biệt!');`;
+console.log('Trang web Coderlive đã tải thành công với 3 tab riêng biệt!');`;
 
 export const CODE_TEMPLATES: CodeTemplate[] = [
   {
@@ -207,7 +207,7 @@ export const CODE_TEMPLATES: CodeTemplate[] = [
   <p class="sub">Nhập công việc và nhấn Thêm để lưu lại</p>
   
   <div class="input-box">
-    <input type="text" id="task-input" placeholder="Ví dụ: Thiết kế giao diện HTMLive..." />
+    <input type="text" id="task-input" placeholder="Ví dụ: Thiết kế giao diện Coderlive..." />
     <button class="add-btn" id="add-btn">Thêm</button>
   </div>
 
@@ -238,7 +238,7 @@ li.completed span { text-decoration: line-through; color: #94a3b8; }
 .footer { margin-top: 20px; padding-top: 14px; border-top: 1px solid #334155; font-size: 13px; color: #94a3b8; display: flex; justify-content: space-between; }`,
     jsCode: `let tasks = [
   { id: 1, text: 'Học cú pháp HTML & CSS hiện đại', done: true },
-  { id: 2, text: 'Thử nghiệm chia 3 tab trong HTMLive', done: false },
+  { id: 2, text: 'Thử nghiệm chia 3 tab trong Coderlive', done: false },
   { id: 3, text: 'Tạo ứng dụng web tương tác', done: false }
 ];
 

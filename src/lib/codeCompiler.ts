@@ -59,7 +59,7 @@ function countLines(text: string): number {
 
 function buildRuntimeCaptureScript(channelToken: string): string {
   const tokenLiteral = JSON.stringify(channelToken);
-  return `<script data-htmlive-runtime="1">
+  return `<script data-coderlive-runtime="1">
 (function() {
   var CHANNEL_TOKEN = ${tokenLiteral};
   var HOST_FILTER = ['chrome-extension://', 'moz-extension://', 'safari-extension://', 'safari-web-extension://', 'edge-extension://', '/@vite/', '/@fs/', '/node_modules/'];
@@ -124,7 +124,7 @@ function buildRuntimeCaptureScript(channelToken: string): string {
 
   function emit(payload) {
     try {
-      payload.source = 'htmlive-preview';
+      payload.source = 'coderlive-preview';
       payload.token = CHANNEL_TOKEN;
       payload.time = new Date().toLocaleTimeString('vi-VN');
       window.parent.postMessage(payload, '*');
@@ -318,22 +318,22 @@ export function compilePreviewDocument(
 
   const pushCssSegments = () => {
     if (!hasCss) return;
-    segments.push({ kind: 'wrapper', text: '\n<style id="htmlive-user-css">\n', origStartLine: 1, firstLineColOffset: 0 });
+    segments.push({ kind: 'wrapper', text: '\n<style id="coderlive-user-css">\n', origStartLine: 1, firstLineColOffset: 0 });
     segments.push({ kind: 'css', text: rawCss, origStartLine: 1, firstLineColOffset: 0 });
     segments.push({ kind: 'wrapper', text: '\n</style>\n', origStartLine: 1, firstLineColOffset: 0 });
   };
 
   const pushJsSegments = () => {
     if (!hasJs) return;
-    segments.push({ kind: 'wrapper', text: '\n<script id="htmlive-user-js">', origStartLine: 1, firstLineColOffset: 0 });
+    segments.push({ kind: 'wrapper', text: '\n<script id="coderlive-user-js">', origStartLine: 1, firstLineColOffset: 0 });
     segments.push({ kind: 'js', text: rawJs, origStartLine: 1, firstLineColOffset: 0 });
-    segments.push({ kind: 'wrapper', text: '\n//# sourceURL=htmlive-tab-js.js\n</script>\n', origStartLine: 1, firstLineColOffset: 0 });
+    segments.push({ kind: 'wrapper', text: '\n//# sourceURL=coderlive-tab-js.js\n</script>\n', origStartLine: 1, firstLineColOffset: 0 });
   };
 
   if (!isFullHtml) {
     segments.push({
       kind: 'wrapper',
-      text: '<!DOCTYPE html>\n<html lang="vi">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>HTMLive Preview</title>\n',
+      text: '<!DOCTYPE html>\n<html lang="vi">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>Coderlive Preview</title>\n',
       origStartLine: 1,
       firstLineColOffset: 0,
     });
@@ -556,7 +556,7 @@ function sanitizeStackForDisplay(
       const frames = parseStackFrames(ln);
       if (frames.length > 0) {
         const f = frames[0];
-        if (!f.source.includes('htmlive-tab-js.js')) {
+        if (!f.source.includes('coderlive-tab-js.js')) {
           const mapped = mapDocLineToTab(f.line, f.col, sourceMap);
           if (mapped.kind === 'runtime') return false;
         }
@@ -607,7 +607,7 @@ export function mapPreviewLocationToTab(
   const cssMax = Math.max(1, countLines(cssCode));
 
   // 1. Nếu URL trực tiếp là sourceURL của JS tab
-  if (url && url.includes('htmlive-tab-js.js') && line && line > 0) {
+  if (url && url.includes('coderlive-tab-js.js') && line && line > 0) {
     const mappedLine = Math.min(jsMax, Math.max(1, line));
     return {
       tab: 'js',
@@ -623,7 +623,7 @@ export function mapPreviewLocationToTab(
   for (const frame of frames) {
     if (isExtensionOrHostUrl(frame.source)) continue;
 
-    if (frame.source.includes('htmlive-tab-js.js')) {
+    if (frame.source.includes('coderlive-tab-js.js')) {
       const mappedLine = Math.min(jsMax, Math.max(1, frame.line));
       return {
         tab: 'js',
@@ -757,7 +757,7 @@ export function combineCode(htmlCode: string, cssCode: string, jsCode: string): 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HTMLive Preview</title>${styleTag}
+  <title>Coderlive Preview</title>${styleTag}
 </head>
 <body>
 ${trimmedHtml || ''}

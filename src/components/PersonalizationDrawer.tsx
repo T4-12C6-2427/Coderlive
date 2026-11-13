@@ -85,8 +85,8 @@ export interface PersonalizationDrawerProps {
   onTriggerTestPattern?: () => void;
 }
 
-const STORAGE_KEY_SECTION = 'htmlive_personalize_section_v1';
-const STORAGE_KEY_MINIMIZED = 'htmlive_personalize_minimized_v1';
+const STORAGE_KEY_SECTION = 'coderlive_personalize_section_v1';
+const STORAGE_KEY_MINIMIZED = 'coderlive_personalize_minimized_v1';
 
 export const PersonalizationDrawer: React.FC<PersonalizationDrawerProps> = ({
   isOpen,
@@ -107,7 +107,6 @@ export const PersonalizationDrawer: React.FC<PersonalizationDrawerProps> = ({
     exportTheme,
     importTheme,
     toggleThemeMode,
-    setTokenInspectorOpen,
   } = useTheme();
 
   const { currentUser } = useAuth();
@@ -1343,14 +1342,6 @@ export const PersonalizationDrawer: React.FC<PersonalizationDrawerProps> = ({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-subtle">
                       <span className="text-[11px] text-muted leading-relaxed">
                         Vùng soạn thảo giữ tối thiểu 88% để mã nguồn luôn rõ nét.
-                        <span className="shortcut-hint">
-                          {' '}
-                          Nhấn{' '}
-                          <kbd className="px-1 py-0.5 rounded bg-elevated border border-default font-mono text-[10px]">
-                            Ctrl+Shift+B
-                          </kbd>{' '}
-                          để bật/tắt bảng thông số lớp nền.
-                        </span>
                       </span>
                       {onTriggerTestPattern && (
                         <button
@@ -2373,6 +2364,55 @@ export const PersonalizationDrawer: React.FC<PersonalizationDrawerProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* Bộ đếm FPS ở góc màn hình */}
+                {(() => {
+                  const defaultShowFps = typeof window !== 'undefined' ? window.innerWidth >= 768 : true;
+                  const fpsEnabled = settings.showFps ?? defaultShowFps;
+                  const currentCorner = settings.fpsCorner || 'bottom-right';
+                  return (
+                    <div className="p-3.5 bg-panel border border-default rounded-[var(--radius-sm)] space-y-3">
+                      <Switch
+                        checked={fpsEnabled}
+                        onChange={(checked) => updateSettings({ showFps: checked })}
+                        label="Hiện FPS ở góc màn hình"
+                        description="Hiển thị tốc độ khung hình gọn nhẹ ở một góc màn hình, tự tạm dừng khi chuyển tab."
+                      />
+                      {fpsEnabled && (
+                        <div className="border-t border-subtle pt-3 space-y-2">
+                          <span className="block text-xs font-semibold text-secondary">
+                            Vị trí góc hiển thị FPS
+                          </span>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                            {[
+                              { id: 'bottom-right', label: 'Dưới phải' },
+                              { id: 'bottom-left', label: 'Dưới trái' },
+                              { id: 'top-right', label: 'Trên phải' },
+                              { id: 'top-left', label: 'Trên trái' },
+                            ].map((opt) => (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() =>
+                                  updateSettings({
+                                    fpsCorner: opt.id as 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left',
+                                  })
+                                }
+                                className={`touch-target-h px-2 py-1.5 rounded-[var(--radius-xs)] text-[11px] font-medium border cursor-pointer transition-colors ${
+                                  currentCorner === opt.id
+                                    ? 'bg-accent-soft text-accent border-[var(--accent-base)] font-semibold'
+                                    : 'bg-elevated text-secondary border-default hover:text-primary'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -2415,7 +2455,7 @@ export const PersonalizationDrawer: React.FC<PersonalizationDrawerProps> = ({
                       className="touch-target-h px-3 py-1.5 rounded-[var(--radius-xs)] bg-elevated border border-default hover:border-strong text-xs font-medium flex items-center gap-1.5 text-primary cursor-pointer transition-colors"
                     >
                       <Download className="w-3.5 h-3.5 text-accent" />
-                      <span>Tải tệp htmlive-theme.json</span>
+                      <span>Tải tệp coderlive-theme.json</span>
                     </button>
                   </div>
 
@@ -2432,23 +2472,6 @@ export const PersonalizationDrawer: React.FC<PersonalizationDrawerProps> = ({
                       <span>Nhập giao diện ngay</span>
                     </button>
                   </div>
-                </div>
-
-                {/* Token Inspector Trigger */}
-                <div className="p-3.5 bg-panel border border-default rounded-[var(--radius-sm)] flex flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs font-semibold text-primary block">Công cụ Token Inspector (Dành cho Dev)</span>
-                    <span className="text-[11px] text-muted">
-                      Kiểm tra giá trị biến CSS variables trực tiếp & quét phần tử màu cứng
-                      <span className="shortcut-hint"> (Ctrl+Shift+D)</span>
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setTokenInspectorOpen(true)}
-                    className="touch-target-h px-3 py-1.5 text-xs font-medium rounded-[var(--radius-xs)] bg-elevated border border-default hover:border-strong text-primary cursor-pointer flex-shrink-0"
-                  >
-                    Mở Inspector
-                  </button>
                 </div>
               </div>
             )}
@@ -2478,9 +2501,9 @@ export const PersonalizationDrawer: React.FC<PersonalizationDrawerProps> = ({
               <div className="h-8 px-2.5 bg-panel border border-subtle rounded-[var(--radius-xs)] flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <div className="w-4 h-4 rounded-[var(--radius-xs)] bg-accent text-accent-on flex items-center justify-center text-[9px] font-bold">
-                    H
+                    C
                   </div>
-                  <span className="text-xs font-bold text-primary">HTMLive</span>
+                  <span className="text-xs font-bold text-primary">Coderlive</span>
                 </div>
 
                 <div className="flex items-center gap-1.5">

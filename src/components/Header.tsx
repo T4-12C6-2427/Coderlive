@@ -8,7 +8,6 @@ import {
   MoreHorizontal,
   Rows,
   Columns,
-  Maximize2,
   Sun,
   Moon,
   Copy,
@@ -30,7 +29,6 @@ import {
   Wand2,
   Palette,
   Search,
-  Eye,
   Cloud,
   Users,
   Lock
@@ -65,14 +63,13 @@ export interface HeaderProps {
   onCopy: () => void;
   onOpenDownload: () => void;
   onFormatCode?: () => void;
-  onToggleFullscreen: () => void;
-  isFullscreen: boolean;
   layout: LayoutMode;
   onToggleLayout: () => void;
   theme: ThemeMode;
   onToggleTheme: () => void;
   onSelectTemplate: (template: CodeTemplate) => void;
   isCopied: boolean;
+  isCodeEmpty?: boolean;
   activeTemplateId?: string;
 
   // Workspace layout presets
@@ -137,14 +134,13 @@ export const Header: React.FC<HeaderProps> = ({
   onCopy,
   onOpenDownload,
   onFormatCode,
-  onToggleFullscreen,
-  isFullscreen,
   layout,
   onToggleLayout,
   theme,
   onToggleTheme,
   onSelectTemplate,
   isCopied,
+  isCodeEmpty = false,
   activeTemplateId,
   activePreset = 'split-horizontal',
   onSetWorkspacePreset,
@@ -384,7 +380,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
               <span className="font-semibold text-xs tracking-tight text-primary">
-                HTMLive
+                Coderlive
               </span>
               <span className="text-[9px] font-mono font-semibold tracking-wider uppercase px-1.5 py-0.2 rounded-full bg-accent-soft text-accent border border-[var(--accent-base)]/25">
                 PRO
@@ -623,21 +619,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden sm:inline">Lưu</span>
               </button>
 
-              {/* 3. Cá nhân hóa (Palette - visible >=640px, reachable via Bottom Bar & More menu on phones) */}
-              {onOpenPersonalize && (
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  className="hidden sm:inline-flex"
-                  onClick={onOpenPersonalize}
-                  tooltip="Cá nhân hóa giao diện (Màu sắc, Font, Bố cục)"
-                  aria-label="Cá nhân hóa giao diện"
-                >
-                  <Palette className="w-4 h-4 text-accent" strokeWidth={1.5} />
-                </IconButton>
-              )}
-
-              {/* 4. "Thêm" (⋯) Dropdown Menu */}
+              {/* 3. "Thêm" (⋯) Dropdown Menu */}
               <IconButton
                 ref={moreBtnRef}
                 size="sm"
@@ -901,11 +883,19 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Copy code */}
             <button
+              type="button"
+              disabled={isCodeEmpty}
+              title={isCodeEmpty ? 'Chưa có code' : undefined}
               onClick={() => {
+                if (isCodeEmpty) return;
                 onCopy();
                 setShowMoreDropdown(false);
               }}
-              className="touch-target-h w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] text-secondary hover:text-primary hover:bg-[var(--border-subtle)] flex items-center justify-between transition-colors cursor-pointer"
+              className={`touch-target-h w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] flex items-center justify-between transition-colors ${
+                isCodeEmpty
+                  ? 'text-muted opacity-50 cursor-not-allowed'
+                  : 'text-secondary hover:text-primary hover:bg-[var(--border-subtle)] cursor-pointer'
+              }`}
               role="menuitem"
             >
               <div className="flex items-center gap-2">
@@ -921,18 +911,25 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Download */}
             <button
+              type="button"
+              disabled={isCodeEmpty}
+              title={isCodeEmpty ? 'Chưa có code' : undefined}
               onClick={() => {
+                if (isCodeEmpty) return;
                 onOpenDownload();
                 setShowMoreDropdown(false);
               }}
-              className="touch-target-h w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] text-secondary hover:text-primary hover:bg-[var(--border-subtle)] flex items-center justify-between transition-colors cursor-pointer"
+              className={`touch-target-h w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] flex items-center justify-between transition-colors ${
+                isCodeEmpty
+                  ? 'text-muted opacity-50 cursor-not-allowed'
+                  : 'text-secondary hover:text-primary hover:bg-[var(--border-subtle)] cursor-pointer'
+              }`}
               role="menuitem"
             >
               <div className="flex items-center gap-2">
                 <Download className="w-3.5 h-3.5 text-muted" strokeWidth={1.5} />
                 <span>Tải xuống (.html/.htm)</span>
               </div>
-              <Kbd>Ctrl+Shift+D</Kbd>
             </button>
 
             {/* Format code */}
@@ -990,36 +987,6 @@ export const Header: React.FC<HeaderProps> = ({
                     <span>Chia dọc (Trên / Dưới)</span>
                   </div>
                   {activePreset === 'split-vertical' && <Check className="w-3 h-3" strokeWidth={2} />}
-                </button>
-                <button
-                  onClick={() => {
-                    onSetWorkspacePreset('focus-code');
-                    setShowMoreDropdown(false);
-                  }}
-                  className={`touch-target-h w-full text-left px-2.5 py-1 rounded-[var(--radius-xs)] flex items-center justify-between cursor-pointer ${
-                    activePreset === 'focus-code' ? 'bg-accent-soft text-accent font-medium' : 'text-secondary hover:text-primary hover:bg-[var(--border-subtle)]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Code2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                    <span>Tập trung Code</span>
-                  </div>
-                  {activePreset === 'focus-code' && <Check className="w-3 h-3" strokeWidth={2} />}
-                </button>
-                <button
-                  onClick={() => {
-                    onSetWorkspacePreset('zen');
-                    setShowMoreDropdown(false);
-                  }}
-                  className={`touch-target-h w-full text-left px-2.5 py-1 rounded-[var(--radius-xs)] flex items-center justify-between cursor-pointer ${
-                    activePreset === 'zen' ? 'bg-accent-soft text-accent font-medium' : 'text-secondary hover:text-primary hover:bg-[var(--border-subtle)]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                    <span>Chế độ Zen</span>
-                  </div>
-                  <Kbd>F11</Kbd>
                 </button>
               </div>
             )}

@@ -1,4 +1,5 @@
-import { ThemePreset, ThemeSettings, RadiusStyle, DensityStyle } from '../types/theme';
+import { ThemePreset, ThemeSettings, RadiusStyle, DensityStyle, FpsCorner } from '../types/theme';
+import { migrateLegacyStorageKeys } from './storageMigration';
 
 export const THEME_PRESETS: ThemePreset[] = [
   {
@@ -1508,19 +1509,28 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   collabHideRemoteCursors: false,
   collabHideOwnCursor: false,
   collabChatSound: false,
+  fpsCorner: 'bottom-right',
 };
 
-export const STORAGE_KEY_THEME_SETTINGS = 'htmlive_theme_settings_v2';
+export const STORAGE_KEY_THEME_SETTINGS = 'coderlive_theme_settings_v2';
+export const STORAGE_KEY_THEME_MODE = 'coderlive_theme_mode_v1';
 
 export function isTouchEnvironment(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false;
   return window.matchMedia('(hover: none) and (pointer: coarse), (pointer: coarse)').matches;
 }
 
+export function getDefaultShowFps(): boolean {
+  if (typeof window === 'undefined') return true;
+  return window.innerWidth >= 768;
+}
+
 export function getDefaultThemeSettings(): ThemeSettings {
   return {
     ...DEFAULT_THEME_SETTINGS,
     density: isTouchEnvironment() ? 'comfortable' : DEFAULT_THEME_SETTINGS.density,
+    showFps: getDefaultShowFps(),
+    fpsCorner: 'bottom-right',
   };
 }
 
@@ -1932,8 +1942,56 @@ export function applyThemeToDom(settings: ThemeSettings): void {
   }
 }
 
+const VALID_FPS_CORNERS: readonly FpsCorner[] = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
+
+/**
+ * Chuẩn hóa dữ liệu cấu hình giao diện nhập từ JSON (hỗ trợ cả tệp cũ từ HTMLive và tệp mới Coderlive).
+ */
+export function normalizeImportedThemeJson(jsonStr: string):
+  | { success: true; data: Partial<ThemeSettings> }
+  | { success: false; message: string } {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { success: false, message: 'Định dạng JSON không hợp lệ.' };
+    }
+
+    // Hỗ trợ cả cấu trúc phẳng (ThemeSettings trực tiếp) lẫn gói có metadata (settings / themeSettings / data)
+    const obj = parsed as Record<string, unknown>;
+    const candidateRaw =
+      (obj.settings && typeof obj.settings === 'object' ? obj.settings : null) ||
+      (obj.themeSettings && typeof obj.themeSettings === 'object' ? obj.themeSettings : null) ||
+      (obj.data && typeof obj.data === 'object' ? obj.data : null) ||
+      obj;
+
+    const candidate = candidateRaw as Record<string, unknown>;
+    if (!candidate.presetId && !candidate.accentColor) {
+      return { success: false, message: 'Tệp JSON không chứa cấu hình giao diện hợp lệ.' };
+    }
+
+    const sanitized: Record<string, unknown> = { ...candidate };
+    // Loại bỏ các trường metadata cũ/mới không thuộc ThemeSettings
+    delete sanitized.app;
+    delete sanitized.appName;
+    delete sanitized.exportedFrom;
+    delete sanitized.version;
+
+    if (typeof sanitized.fpsCorner === 'string' && !VALID_FPS_CORNERS.includes(sanitized.fpsCorner as FpsCorner)) {
+      sanitized.fpsCorner = 'bottom-right';
+    }
+
+    return { success: true, data: sanitized as Partial<ThemeSettings> };
+  } catch (e) {
+    return {
+      success: false,
+      message: `Lỗi đọc JSON: ${e instanceof Error ? e.message : 'Lỗi không xác định'}`,
+    };
+  }
+}
+
 // Storage helpers
 export function loadThemeSettings(): ThemeSettings {
+  migrateLegacyStorageKeys();
   const defaults = getDefaultThemeSettings();
   if (typeof localStorage === 'undefined') return defaults;
   try {
@@ -1944,6 +2002,8 @@ export function loadThemeSettings(): ThemeSettings {
       ...defaults,
       ...parsed,
       density: parsed.density || defaults.density,
+      showFps: typeof parsed.showFps === 'boolean' ? parsed.showFps : defaults.showFps,
+      fpsCorner: VALID_FPS_CORNERS.includes(parsed.fpsCorner) ? parsed.fpsCorner : defaults.fpsCorner,
     };
   } catch {
     return defaults;
@@ -1954,7 +2014,7 @@ export function saveThemeSettings(settings: ThemeSettings): void {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_THEME_SETTINGS, JSON.stringify(settings));
-    localStorage.setItem('htmlive_theme_mode_v1', settings.mode);
+    localStorage.setItem(STORAGE_KEY_THEME_MODE, settings.mode);
   } catch (e) {
     console.error('Không thể lưu cài đặt giao diện:', e);
   }

@@ -7,6 +7,7 @@ import {
   loadThemeSettings,
   saveThemeSettings,
   applyThemeToDom,
+  normalizeImportedThemeJson,
 } from '../lib/themeEngine';
 import { useAuth } from './AuthContext';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -28,8 +29,6 @@ export interface ThemeContextType {
   exportTheme: () => string;
   importTheme: (jsonStr: string) => { success: boolean; message: string };
   toggleThemeMode: () => void;
-  isTokenInspectorOpen: boolean;
-  setTokenInspectorOpen: (open: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -39,7 +38,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [settings, setSettings] = useState<ThemeSettings>(() => loadThemeSettings());
   const [history, setHistory] = useState<ThemeSettings[]>([]);
   const [future, setFuture] = useState<ThemeSettings[]>([]);
-  const [isTokenInspectorOpen, setTokenInspectorOpen] = useState(false);
   const isInitialMount = useRef(true);
 
   const activePreset = THEME_PRESETS.find((p) => p.id === settings.presetId) || THEME_PRESETS[0];
@@ -91,18 +89,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     isInitialMount.current = false;
-  }, []);
-
-  // Keyboard shortcut Ctrl+Shift+D for Dev Token Inspector
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
-        e.preventDefault();
-        setTokenInspectorOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const updateSettings = useCallback((partial: Partial<ThemeSettings>) => {
@@ -233,7 +219,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `htmlive-theme-${settings.presetId}-${Date.now()}.json`;
+      a.download = `coderlive-theme-${settings.presetId}-${Date.now()}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -245,27 +231,19 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [settings]);
 
   const importTheme = useCallback((jsonStr: string): { success: boolean; message: string } => {
-    try {
-      const parsed = JSON.parse(jsonStr);
-      if (!parsed || typeof parsed !== 'object') {
-        return { success: false, message: 'Định dạng JSON không hợp lệ.' };
-      }
-      if (!parsed.presetId && !parsed.accentColor) {
-        return { success: false, message: 'Tệp JSON không chứa cấu hình giao diện hợp lệ.' };
-      }
-
-      setSettings((prev) => {
-        setHistory((h) => [...h.slice(-25), prev]);
-        setFuture([]);
-        return {
-          ...prev,
-          ...parsed,
-        };
-      });
-      return { success: true, message: 'Đã nhập cấu hình giao diện thành công!' };
-    } catch (e) {
-      return { success: false, message: `Lỗi đọc JSON: ${e instanceof Error ? e.message : 'Lỗi không xác định'}` };
+    const normalized = normalizeImportedThemeJson(jsonStr);
+    if (normalized.success === false) {
+      return { success: false, message: normalized.message };
     }
+    setSettings((prev) => {
+      setHistory((h) => [...h.slice(-25), prev]);
+      setFuture([]);
+      return {
+        ...prev,
+        ...normalized.data,
+      };
+    });
+    return { success: true, message: 'Đã nhập cấu hình giao diện thành công!' };
   }, []);
 
   const toggleThemeMode = useCallback(() => {
@@ -301,8 +279,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         exportTheme,
         importTheme,
         toggleThemeMode,
-        isTokenInspectorOpen,
-        setTokenInspectorOpen,
       }}
     >
       {children}

@@ -4,8 +4,6 @@ import {
   Tablet,
   Smartphone,
   RotateCcw,
-  Maximize2,
-  Minimize2,
   Terminal,
   AlertCircle,
   AlertTriangle,
@@ -42,9 +40,8 @@ interface PreviewPaneProps {
   previewCodes: { html: string; css: string; js: string };
   theme?: ThemeMode;
   onRefresh: () => void;
-  isFullscreen: boolean;
-  onToggleFullscreen: () => void;
   refreshTrigger: number;
+  isEmptyPreview?: boolean;
   consoleMessages: ConsoleMessage[];
   staticIssues: StaticIssue[];
   onRuntimeMessage: (msg: ConsoleMessage) => void;
@@ -78,9 +75,8 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
   channelToken,
   previewCodes,
   onRefresh,
-  isFullscreen,
-  onToggleFullscreen,
   refreshTrigger,
+  isEmptyPreview = false,
   consoleMessages,
   staticIssues,
   onRuntimeMessage,
@@ -130,13 +126,14 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
 
       const data = event.data;
       if (!data || typeof data !== 'object') return;
-      if (data.source !== 'htmlive-preview') return;
+      if (data.source !== 'coderlive-preview') return;
       if (data.token !== channelTokenRef.current) return;
 
       const rawMessage = typeof data.message === 'string' ? data.message : String(data.message ?? '');
       if (isExtensionOrHostUrl(data.url) || isExtensionOrHostUrl(rawMessage)) return;
 
       const codes = previewCodesRef.current;
+      if (!codes.html && !codes.css && !codes.js) return;
       const mapped = mapPreviewLocationToTab(
         {
           sourceType: data.sourceType,
@@ -448,21 +445,6 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
-
-          {/* Fullscreen button */}
-          <button
-            type="button"
-            onClick={onToggleFullscreen}
-            className={`touch-target p-1.5 flex items-center justify-center rounded-[var(--radius-sm)] border transition-all cursor-pointer shadow-xs flex-shrink-0 ${
-              isFullscreen
-                ? 'bg-accent text-accent-on border-[var(--accent-base)]'
-                : 'bg-panel hover:bg-elevated border-default text-secondary hover:text-primary'
-            }`}
-            title={isTouch ? undefined : isFullscreen ? 'Thu nhỏ cửa sổ' : 'Phóng to toàn màn hình'}
-            aria-label={isFullscreen ? 'Thu nhỏ cửa sổ' : 'Bật tắt toàn màn hình'}
-          >
-            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
         </div>
       </div>
 
@@ -484,6 +466,14 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           {device !== 'desktop' && (
             <div className="absolute bottom-2 right-2 z-20 text-[10px] font-mono px-2 py-0.5 rounded-[var(--radius-xs)] bg-elevated/90 text-primary border border-default backdrop-blur-xs pointer-events-none">
               {device === 'mobile' ? '375 × 667 px' : '768 px'}
+            </div>
+          )}
+
+          {isEmptyPreview && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4 text-center">
+              <p className="text-xs sm:text-sm text-muted select-none">
+                Gõ code ở bên trái để xem kết quả
+              </p>
             </div>
           )}
 

@@ -18,6 +18,7 @@ import {
 } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import { useIsMobile, useIsTouch } from '../hooks/useViewport';
+import { getHiddenLanguages } from '../lib/editorWorkspaceUtils';
 import {
   addInsertFlashesEffect,
   createCollabPresenceExtension,
@@ -31,6 +32,7 @@ import {
   LineCommentsPopover,
   ResolvedLineCommentItem,
 } from './collab/LineCommentsPopover';
+import { Dropdown, DropdownItem } from './ui/Dropdown';
 
 interface EditorPaneProps {
   activeTab: EditorTab;
@@ -44,10 +46,12 @@ interface EditorPaneProps {
   theme?: ThemeMode;
   onFormatCode?: () => void;
   isReadOnly?: boolean;
+  canCustomizeTabs?: boolean;
   readOnlyBadgeText?: string;
   enabledLanguages?: ('html' | 'css' | 'js')[];
   onAddLanguage?: (lang: 'html' | 'css' | 'js') => void;
   onRemoveLanguage?: (lang: 'css' | 'js') => void;
+  autoFocusDesktop?: boolean;
   // Collaborative CRDT bindings
   collabProjectId?: string;
   collabYDoc?: Y.Doc | null;
@@ -98,10 +102,12 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   onJsChange,
   onFormatCode,
   isReadOnly = false,
+  canCustomizeTabs,
   readOnlyBadgeText = 'Chỉ đọc',
   enabledLanguages = ['html', 'css', 'js'],
   onAddLanguage,
   onRemoveLanguage,
+  autoFocusDesktop = false,
   collabProjectId,
   collabYDoc = null,
   collabSyncReady = false,
@@ -130,13 +136,19 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   const { settings } = useTheme();
   const isTouch = useIsTouch();
   const isMobile = useIsMobile();
+  const allowTabCustomize = canCustomizeTabs ?? !isReadOnly;
+  const hiddenLanguages = useMemo(
+    () => getHiddenLanguages(enabledLanguages),
+    [enabledLanguages]
+  );
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [commentPopover, setCommentPopover] = useState<{
     lineNumber: number;
     anchorY: number | null;
   } | null>(null);
-  const addMenuRef = useRef<HTMLDivElement>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const hasDesktopFocusedRef = useRef<boolean>(false);
   const seenFlashIdsRef = useRef<Set<string>>(new Set());
   const lastFollowedSigRef = useRef<string | null>(null);
   const lastJumpNonceRef = useRef<number>(0);
@@ -209,17 +221,31 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     }
   }, [enabledLanguages, activeTab, onTabChange]);
 
-  // Close add menu on outside click
+  // Close add menu if all tabs are visible
   useEffect(() => {
-    if (!showAddMenu) return;
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
-        setShowAddMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showAddMenu]);
+    if (hiddenLanguages.length === 0 && showAddMenu) {
+      setShowAddMenu(false);
+    }
+  }, [hiddenLanguages.length, showAddMenu]);
+
+  const addMenuItems: DropdownItem[] = useMemo(() => {
+    if (!onAddLanguage) return [];
+    return hiddenLanguages.map((lang) => ({
+      id: lang,
+      label: lang === 'css' ? 'CSS' : 'JS',
+      hint: lang === 'css' ? 'Giao diện' : 'Tương tác',
+      icon: (
+        <span
+          className={`w-2 h-2 rounded-full flex-shrink-0 ${
+            lang === 'css' ? 'bg-[var(--accent-2)]' : 'bg-accent'
+          }`}
+        />
+      ),
+      onSelect: () => {
+        onAddLanguage(lang);
+      },
+    }));
+  }, [hiddenLanguages, onAddLanguage]);
 
   // Keep active cursor visible above mobile on-screen keyboard when visualViewport shrinks
   useEffect(() => {
@@ -626,10 +652,26 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             applyCursorJump(view, cursorJumpTarget.line, cursorJumpTarget.col);
           }
         });
+      } else if (
+        autoFocusDesktop &&
+        activeTab === 'html' &&
+        !hasDesktopFocusedRef.current &&
+        !isReadOnly &&
+        !isTouch &&
+        !isMobile &&
+        typeof window !== 'undefined' &&
+        window.innerWidth >= 768
+      ) {
+        hasDesktopFocusedRef.current = true;
+        requestAnimationFrame(() => {
+          if (editorViewRef.current === view && !document.querySelector('[role="dialog"]')) {
+            view.focus();
+          }
+        });
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isCollabEditorReady, activeTab, collabYDoc, activeCollabYText, cursorJumpTarget, applyCursorJump]
+    [isCollabEditorReady, activeTab, collabYDoc, activeCollabYText, cursorJumpTarget, applyCursorJump, autoFocusDesktop, isReadOnly, isTouch, isMobile]
   );
 
   // Current code and change handler (personal mode + stats)
@@ -940,7 +982,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
                 <span>CSS</span>
                 {renderTabPresence('css')}
               </button>
-              {onRemoveLanguage && !isReadOnly && (
+              {onRemoveLanguage && allowTabCustomize && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -979,7 +1021,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
                 <span>JS</span>
                 {renderTabPresence('js')}
               </button>
-              {onRemoveLanguage && !isReadOnly && (
+              {onRemoveLanguage && allowTabCustomize && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -998,49 +1040,48 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             </div>
           )}
 
-          {/* Add missing language button (+) */}
-          {!isReadOnly && (!enabledLanguages.includes('css') || !enabledLanguages.includes('js')) && onAddLanguage && (
-            <div className="relative flex-shrink-0" ref={addMenuRef}>
+          {/* Add hidden/available language button (+) */}
+          {allowTabCustomize && onAddLanguage && (
+            <div className="relative flex-shrink-0">
               <button
+                ref={addButtonRef}
                 type="button"
-                onClick={() => setShowAddMenu(!showAddMenu)}
-                className="touch-hit-expand w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] text-muted hover:text-primary hover:bg-[var(--border-subtle)] transition-colors cursor-pointer"
-                title={isTouch ? undefined : 'Thêm ngôn ngữ vào dự án (+)'}
-                aria-label="Thêm ngôn ngữ vào dự án"
+                disabled={hiddenLanguages.length === 0}
+                onClick={() => {
+                  if (hiddenLanguages.length === 0) return;
+                  setShowAddMenu((prev) => !prev);
+                }}
+                onKeyDown={(e) => {
+                  if (hiddenLanguages.length === 0) return;
+                  if (e.key === 'ArrowDown' && !showAddMenu) {
+                    e.preventDefault();
+                    setShowAddMenu(true);
+                  }
+                }}
+                className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center rounded-[var(--radius-sm)] text-muted hover:text-primary hover:bg-[var(--border-subtle)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--accent-base)] focus-visible:outline-none"
+                title={
+                  hiddenLanguages.length === 0
+                    ? 'Đã hiển thị tất cả tab'
+                    : isTouch
+                    ? undefined
+                    : 'Thêm tab bị ẩn'
+                }
+                aria-label="Thêm tab"
+                aria-haspopup="menu"
+                aria-expanded={showAddMenu && hiddenLanguages.length > 0}
               >
-                <Plus className="w-3.5 h-3.5" strokeWidth={1.5} />
+                <Plus className="w-3.5 h-3.5" strokeWidth={1.75} />
               </button>
 
-              {showAddMenu && (
-                <div className="absolute left-0 top-10 z-30 min-w-40 max-w-[calc(100vw-24px)] py-1 bg-elevated border border-default rounded-[var(--radius-sm)] shadow-[var(--shadow-overlay)] text-xs animate-in fade-in zoom-in-95 duration-150">
-                  {!enabledLanguages.includes('css') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onAddLanguage('css');
-                        setShowAddMenu(false);
-                      }}
-                      className="touch-target-h w-full px-3 py-1.5 text-left text-secondary hover:text-primary hover:bg-[var(--border-subtle)] flex items-center gap-2 transition-colors cursor-pointer"
-                    >
-                      <span className="w-2 h-2 rounded-full bg-[var(--accent-2)]" />
-                      <span>Thêm CSS</span>
-                    </button>
-                  )}
-                  {!enabledLanguages.includes('js') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onAddLanguage('js');
-                        setShowAddMenu(false);
-                      }}
-                      className="touch-target-h w-full px-3 py-1.5 text-left text-secondary hover:text-primary hover:bg-[var(--border-subtle)] flex items-center gap-2 transition-colors cursor-pointer"
-                    >
-                      <span className="w-2 h-2 rounded-full bg-accent" />
-                      <span>Thêm JavaScript</span>
-                    </button>
-                  )}
-                </div>
-              )}
+              <Dropdown
+                isOpen={showAddMenu && hiddenLanguages.length > 0}
+                onClose={() => setShowAddMenu(false)}
+                triggerRef={addButtonRef}
+                title="Thêm tab"
+                ariaLabel="Danh sách tab có thể mở lại"
+                items={addMenuItems}
+                minWidth={184}
+              />
             </div>
           )}
 
@@ -1053,7 +1094,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         </div>
 
         {/* Tab Actions & Stats */}
-        <div className="flex items-center touch-gap gap-2.5 flex-shrink-0">
+        <div className="flex items-center touch-gap gap-2 flex-shrink-0">
           {isCollabMode && onAddLineComment && (
             <button
               type="button"

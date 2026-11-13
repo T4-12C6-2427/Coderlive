@@ -49,7 +49,7 @@ export const LearnPage: React.FC<LearnPageProps> = ({
 
   // Active Course state (persisted)
   const [activeCourseId, setActiveCourseId] = useState<CourseId>(() => {
-    const saved = localStorage.getItem('htmlive_active_course');
+    const saved = localStorage.getItem('coderlive_active_course');
     return (saved as CourseId) || 'html';
   });
 
@@ -94,7 +94,7 @@ export const LearnPage: React.FC<LearnPageProps> = ({
 
   // Save selected course preference
   useEffect(() => {
-    localStorage.setItem('htmlive_active_course', activeCourseId);
+    localStorage.setItem('coderlive_active_course', activeCourseId);
   }, [activeCourseId]);
 
   // Load progress counts for all courses on mount / user change
@@ -123,7 +123,7 @@ export const LearnPage: React.FC<LearnPageProps> = ({
 
   // Load or restore active lesson when course changes
   useEffect(() => {
-    const savedLesson = localStorage.getItem(`htmlive_last_lesson_${activeCourseId}`);
+    const savedLesson = localStorage.getItem(`coderlive_last_lesson_${activeCourseId}`);
     if (savedLesson) {
       const found = currentLessons.find((l) => String(l.id) === savedLesson);
       if (found) {
@@ -140,7 +140,7 @@ export const LearnPage: React.FC<LearnPageProps> = ({
 
   // Persist current lesson position
   useEffect(() => {
-    localStorage.setItem(`htmlive_last_lesson_${activeCourseId}`, String(activeLessonId));
+    localStorage.setItem(`coderlive_last_lesson_${activeCourseId}`, String(activeLessonId));
   }, [activeLessonId, activeCourseId]);
 
   // Handle open dropdown and calculate position
@@ -179,7 +179,7 @@ export const LearnPage: React.FC<LearnPageProps> = ({
     }
 
     // Persist current lesson before switching
-    localStorage.setItem(`htmlive_last_lesson_${activeCourseId}`, String(activeLessonId));
+    localStorage.setItem(`coderlive_last_lesson_${activeCourseId}`, String(activeLessonId));
 
     setActiveCourseId(targetCourseId);
     setShowCourseSelector(false);

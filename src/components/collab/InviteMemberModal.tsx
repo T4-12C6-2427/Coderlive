@@ -94,7 +94,7 @@ export const InviteMemberModal: React.FC<InviteMemberModalProps> = ({
           <span>Mời thành viên</span>
         </div>
       }
-      description={`Chia sẻ liên kết mời cho dự án nhóm "${project.title}"`}
+      description={`Mời bạn tham gia dự án nhóm "${project.title}" trên Coderlive`}
     >
       <div className="space-y-4">
         {error && (

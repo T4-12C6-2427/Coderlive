@@ -176,7 +176,7 @@ export const CheatIllustration: React.FC<CheatIllustrationProps> = ({ illustrati
               {/* Active Tab */}
               <div className="px-3 py-1 rounded-t bg-panel border-t border-x border-default text-xs font-semibold text-primary flex items-center gap-1.5 truncate max-w-xs shadow-xs">
                 <Globe className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                <span className="truncate">{data?.title || 'HTMLive - Trình soạn thảo HTML'}</span>
+                <span className="truncate">{data?.title || 'Coderlive - Trình soạn thảo HTML'}</span>
               </div>
             </div>
 

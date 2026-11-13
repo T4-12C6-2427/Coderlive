@@ -343,14 +343,14 @@ export function buildSandboxedDomHtml(userJs: string, userHtml: string = ''): st
       // Giả lập alert/prompt/confirm
       window.alert = function(msg) {
         window.parent.postMessage({
-          source: 'htmlive-js-runner',
+          source: 'coderlive-js-runner',
           type: 'info',
           text: '[Thông báo alert]: ' + String(msg)
         }, '*');
       };
       window.prompt = function(msg) {
         window.parent.postMessage({
-          source: 'htmlive-js-runner',
+          source: 'coderlive-js-runner',
           type: 'info',
           text: '[Hỏi prompt]: ' + String(msg)
         }, '*');
@@ -358,7 +358,7 @@ export function buildSandboxedDomHtml(userJs: string, userHtml: string = ''): st
       };
       window.confirm = function(msg) {
         window.parent.postMessage({
-          source: 'htmlive-js-runner',
+          source: 'coderlive-js-runner',
           type: 'info',
           text: '[Xác nhận confirm]: ' + String(msg)
         }, '*');
@@ -377,7 +377,7 @@ export function buildSandboxedDomHtml(userJs: string, userHtml: string = ''): st
         }).join(' ');
 
         window.parent.postMessage({
-          source: 'htmlive-js-runner',
+          source: 'coderlive-js-runner',
           type: type,
           text: text
         }, '*');
@@ -390,7 +390,7 @@ export function buildSandboxedDomHtml(userJs: string, userHtml: string = ''): st
 
       window.addEventListener('error', function(e) {
         window.parent.postMessage({
-          source: 'htmlive-js-runner',
+          source: 'coderlive-js-runner',
           type: 'error',
           text: '❌ ' + (e.message || 'Lỗi thực thi'),
           line: e.lineno
@@ -401,7 +401,7 @@ export function buildSandboxedDomHtml(userJs: string, userHtml: string = ''): st
         ${safeGuardedJs}
       } catch (err) {
         window.parent.postMessage({
-          source: 'htmlive-js-runner',
+          source: 'coderlive-js-runner',
           type: 'error',
           text: '❌ ' + (err.message || String(err))
         }, '*');

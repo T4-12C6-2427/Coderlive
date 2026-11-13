@@ -58,7 +58,7 @@ export const GuestPromptModal: React.FC<GuestPromptModalProps> = ({
             onClick={onDiscard}
             className="touch-target-h w-full py-2.5 px-4 rounded-[var(--radius-sm)] font-medium text-xs text-secondary hover:text-primary bg-panel hover:bg-elevated border border-default transition-colors cursor-pointer"
           >
-            Bỏ qua & mở dự án gần nhất của tôi
+            Bỏ qua &amp; giữ trình soạn thảo trống
           </button>
         </div>
       </div>

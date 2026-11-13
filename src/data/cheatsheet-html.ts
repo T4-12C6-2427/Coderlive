@@ -139,7 +139,7 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
       code: `<!DOCTYPE html>
 <html lang="vi">
   <head>
-    <title>HTMLive - Học Lập Trình Web Trực Quan</title>
+    <title>Coderlive - Học Lập Trình Web Trực Quan</title>
   </head>
   <body>
     <p>Nội dung trang web ở đây.</p>
@@ -160,7 +160,7 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
       illustration: {
         type: 'BrowserTabMock',
         data: {
-          title: 'HTMLive - Học Lập Trình Web Trực Quan',
+          title: 'Coderlive - Học Lập Trình Web Trực Quan',
           showBookmark: true,
           showSerp: true,
           description: 'Học lập trình web với HTML, CSS và JavaScript trực quan, bài học tương tác và thực hành xem trước trực tiếp.',
@@ -185,7 +185,7 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
   <title>Trang web tiếng Việt</title>
 </head>
 <body>
-  <h1>Học lập trình web cùng HTMLive!</h1>
+  <h1>Học lập trình web cùng Coderlive!</h1>
 </body>`,
       steps: [
         {
@@ -257,7 +257,7 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
     example: {
       kind: 'explain',
       code: `<head>
-  <title>HTMLive - Học Lập Trình Web Trực Quan</title>
+  <title>Coderlive - Học Lập Trình Web Trực Quan</title>
   <meta name="description" content="Nền tảng học HTML, CSS, JavaScript trực quan với bài tập tương tác, trình chạy mã tức thì và mẹo lập trình thực chiến.">
 </head>`,
       steps: [
@@ -275,7 +275,7 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
       illustration: {
         type: 'BrowserTabMock',
         data: {
-          title: 'HTMLive - Học Lập Trình Web Trực Quan',
+          title: 'Coderlive - Học Lập Trình Web Trực Quan',
           description: 'Nền tảng học HTML, CSS, JavaScript trực quan với bài tập tương tác, trình chạy mã tức thì và mẹo lập trình thực chiến.',
           showSerp: true,
           showBookmark: false,
@@ -344,7 +344,7 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
       kind: 'explain',
       code: `<noscript>
   <div style="background: #fef2f2; border: 1px solid #ef4444; color: #991b1b; padding: 12px; border-radius: 6px;">
-    <strong>Cảnh báo:</strong> Trình duyệt của bạn đã tắt JavaScript. Một số tính năng tương tác của HTMLive có thể không hoạt động bình thường!
+    <strong>Cảnh báo:</strong> Trình duyệt của bạn đã tắt JavaScript. Một số tính năng tương tác của Coderlive có thể không hoạt động bình thường!
   </div>
 </noscript>
 <p>Nội dung chính của trang web vẫn hiển thị bình thường.</p>`,
@@ -462,7 +462,7 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
 </style>
 
 <div class="hop-thong-bao">
-  ✓ Đăng ký thành công! Chào mừng bạn đến với HTMLive.
+  ✓ Đăng ký thành công! Chào mừng bạn đến với Coderlive.
 </div>`,
       steps: [
         {
@@ -749,8 +749,8 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
       kind: 'render',
       code: `<div style="text-align: center; padding: 12px; background: #f8fafc; border-radius: 8px;">
   <img 
-    src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='120' viewBox='0 0 280 120'%3E%3Crect width='280' height='120' fill='%236366f1' rx='12'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23ffffff' font-family='sans-serif' font-weight='bold' font-size='16'%3EHTMLive Image Example%3C/text%3E%3C/svg%3E" 
-    alt="Ảnh minh họa HTMLive với biểu tượng chuẩn" 
+    src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='120' viewBox='0 0 280 120'%3E%3Crect width='280' height='120' fill='%236366f1' rx='12'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23ffffff' font-family='sans-serif' font-weight='bold' font-size='16'%3ECoderlive Image Example%3C/text%3E%3C/svg%3E" 
+    alt="Ảnh minh họa Coderlive với biểu tượng chuẩn" 
     width="280"
     style="border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"
   />
@@ -1059,7 +1059,7 @@ export const HTML_CHEAT_ENTRIES: CheatEntry[] = [
     <p style="color: #64748b; font-size: 13px; margin: 0;">Khu vực đặt nội dung duy nhất của trang này.</p>
   </main>
   <footer style="background: #f1f5f9; padding: 10px 16px; font-size: 11px; color: #64748b; text-align: center; border-top: 1px solid #e2e8f0;">
-    © 2026 Bản quyền thuộc về HTMLive
+    © 2026 Bản quyền thuộc về Coderlive
   </footer>
 </div>`,
       steps: [

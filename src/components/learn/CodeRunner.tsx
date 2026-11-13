@@ -53,7 +53,7 @@ export const CodeRunner: React.FC<CodeRunnerProps> = ({
     if (!isDomLesson) return;
 
     const handleMessage = (e: MessageEvent) => {
-      if (e.data && e.data.source === 'htmlive-js-runner') {
+      if (e.data && e.data.source === 'coderlive-js-runner') {
         const newLog: RunnerLog = {
           id: Math.random().toString(36).substring(2, 9),
           type: e.data.type || 'log',
