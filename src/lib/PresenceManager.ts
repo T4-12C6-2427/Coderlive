@@ -70,6 +70,66 @@ export function generateSessionId(): string {
   return `sess_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
 }
 
+export function aggregatePresenceSessions(
+  rawSessions: Iterable<PresenceSession>,
+  localSessionId: string,
+  localUid: string,
+  now = Date.now()
+): { onlineUsers: PresenceUser[]; remoteSessions: PresenceSession[] } {
+  const remoteSessions: PresenceSession[] = [];
+  const groupedByUid = new Map<string, PresenceSession[]>();
+
+  for (const sess of rawSessions) {
+    if (sess.sessionId !== localSessionId) {
+      remoteSessions.push(sess);
+    }
+    const arr = groupedByUid.get(sess.uid);
+    if (arr) {
+      arr.push(sess);
+    } else {
+      groupedByUid.set(sess.uid, [sess]);
+    }
+  }
+
+  const onlineUsers: PresenceUser[] = [];
+  groupedByUid.forEach((sessions, uid) => {
+    // Chọn phiên hoạt động gần nhất làm đại diện cho trạng thái tab / idle của người dùng
+    const sorted = [...sessions].sort((a, b) => b.lastActive - a.lastActive);
+    const primary = sorted[0];
+    const maxLastActive = primary.lastActive;
+    const elapsedIdle = Math.max(0, now - maxLastActive);
+    const isIdle = elapsedIdle >= IDLE_THRESHOLD_MS;
+    const idleMinutes = Math.floor(elapsedIdle / 60000);
+    const isTyping = sorted.some((s) => s.typingUntil > now);
+
+    onlineUsers.push({
+      uid,
+      name: primary.name,
+      photoURL: primary.photoURL,
+      color: primary.color,
+      role: primary.role,
+      tab: primary.tab,
+      isTyping,
+      isIdle,
+      idleMinutes,
+      lastActive: maxLastActive,
+      sessionCount: sessions.length,
+      primarySessionId: primary.sessionId,
+      sessions: sorted,
+    });
+  });
+
+  // Sắp xếp: bản thân hoặc người đang hoạt động trước, người vắng mặt sau
+  onlineUsers.sort((a, b) => {
+    if (a.isIdle !== b.isIdle) return a.isIdle ? 1 : -1;
+    if (a.uid === localUid && b.uid !== localUid) return -1;
+    if (b.uid === localUid && a.uid !== localUid) return 1;
+    return b.lastActive - a.lastActive;
+  });
+
+  return { onlineUsers, remoteSessions };
+}
+
 /**
  * Quản lý trạng thái hiện diện thời gian thực (Realtime Database) tại đường dẫn:
  * `presence/{projectId}/{sessionId}`
@@ -89,6 +149,8 @@ export class PresenceManager {
   private typingUntil = 0;
   private lastActive = Date.now();
   private hideOwnCursor: boolean;
+  private isLockHolder = false;
+  private lockClaimedAt = 0;
 
   private onStateChange?: PresenceManagerOptions['onStateChange'];
   private onConnectionChange?: PresenceManagerOptions['onConnectionChange'];
@@ -216,6 +278,8 @@ export class PresenceManager {
               lastActive: typeof raw.lastActive === 'number' ? raw.lastActive : Date.now(),
               role:
                 raw.role === 'owner' || raw.role === 'viewer' ? raw.role : 'editor',
+              isLockHolder: Boolean(raw.isLockHolder),
+              lockClaimedAt: typeof raw.lockClaimedAt === 'number' ? raw.lockClaimedAt : 0,
             });
           }
         }
@@ -259,6 +323,8 @@ export class PresenceManager {
       typingUntil: this.typingUntil,
       lastActive: this.lastActive,
       role: this.role,
+      isLockHolder: this.isLockHolder,
+      lockClaimedAt: this.lockClaimedAt,
     });
   }
 
@@ -274,6 +340,8 @@ export class PresenceManager {
       typingUntil: this.typingUntil,
       lastActive: this.lastActive,
       role: this.role,
+      isLockHolder: this.isLockHolder,
+      lockClaimedAt: this.lockClaimedAt,
     });
   }
 
@@ -392,58 +460,12 @@ export class PresenceManager {
   private emitAggregatedState(): void {
     if (this.isDestroyed) return;
     this.lastStateEmitAt = Date.now();
-    const now = this.lastStateEmitAt;
-    const remoteSessions: PresenceSession[] = [];
-    const groupedByUid = new Map<string, PresenceSession[]>();
-
-    this.rawSessionsMap.forEach((sess) => {
-      if (sess.sessionId !== this.sessionId) {
-        remoteSessions.push(sess);
-      }
-      const arr = groupedByUid.get(sess.uid);
-      if (arr) {
-        arr.push(sess);
-      } else {
-        groupedByUid.set(sess.uid, [sess]);
-      }
-    });
-
-    const onlineUsers: PresenceUser[] = [];
-    groupedByUid.forEach((sessions, uid) => {
-      // Chọn phiên hoạt động gần nhất làm đại diện cho trạng thái tab / idle của người dùng
-      const sorted = [...sessions].sort((a, b) => b.lastActive - a.lastActive);
-      const primary = sorted[0];
-      const maxLastActive = primary.lastActive;
-      const elapsedIdle = Math.max(0, now - maxLastActive);
-      const isIdle = elapsedIdle >= IDLE_THRESHOLD_MS;
-      const idleMinutes = Math.floor(elapsedIdle / 60000);
-      const isTyping = sorted.some((s) => s.typingUntil > now);
-
-      onlineUsers.push({
-        uid,
-        name: primary.name,
-        photoURL: primary.photoURL,
-        color: primary.color,
-        role: primary.role,
-        tab: primary.tab,
-        isTyping,
-        isIdle,
-        idleMinutes,
-        lastActive: maxLastActive,
-        sessionCount: sessions.length,
-        primarySessionId: primary.sessionId,
-        sessions: sorted,
-      });
-    });
-
-    // Sắp xếp: bản thân hoặc người đang hoạt động trước, người vắng mặt sau
-    onlineUsers.sort((a, b) => {
-      if (a.isIdle !== b.isIdle) return a.isIdle ? 1 : -1;
-      if (a.uid === this.uid && b.uid !== this.uid) return -1;
-      if (b.uid === this.uid && a.uid !== this.uid) return 1;
-      return b.lastActive - a.lastActive;
-    });
-
+    const { onlineUsers, remoteSessions } = aggregatePresenceSessions(
+      this.rawSessionsMap.values(),
+      this.sessionId,
+      this.uid,
+      this.lastStateEmitAt
+    );
     this.onStateChange?.({ onlineUsers, remoteSessions });
   }
 
@@ -475,6 +497,14 @@ export class PresenceManager {
     if (this.isDestroyed || this.role === role) return;
     this.role = role;
     this.writeLocalPatch({ role });
+  }
+
+  public updateEditLockClaim(isLockHolder: boolean, lockClaimedAt: number): void {
+    if (this.isDestroyed) return;
+    if (this.isLockHolder === isLockHolder && this.lockClaimedAt === lockClaimedAt) return;
+    this.isLockHolder = isLockHolder;
+    this.lockClaimedAt = lockClaimedAt;
+    this.writeLocalPatch({ isLockHolder, lockClaimedAt });
   }
 
   public updateIdentity(name: string, photoURL: string | null): void {

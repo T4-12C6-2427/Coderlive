@@ -6,13 +6,15 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  orderBy,
+  query,
+  startAfter,
   deleteDoc,
   deleteField,
   onSnapshot,
-  query,
   where,
-  orderBy,
   Unsubscribe,
+  QueryConstraint,
 } from 'firebase/firestore';
 import { ref as rtdbRef, set as rtdbSet, update as rtdbUpdate, remove as rtdbRemove } from 'firebase/database';
 import { db, rtdb, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -27,6 +29,8 @@ import {
   decodeCollabStateToCode,
   encodeInitialCollabState,
 } from '../lib/collabYjsHelpers';
+import { getSnapshotCursor } from '../lib/CollabProvider';
+import { getAccountIdentity } from '../lib/usernameAuth';
 
 const PENDING_INVITE_STORAGE_KEY = 'coderlive_pending_collab_invite_v1';
 
@@ -93,12 +97,12 @@ export function generateInviteToken(): string {
 }
 
 export function buildMemberProfile(user: User): CollabMemberProfile {
-  const fallbackName = user.email ? user.email.split('@')[0] : 'Thành viên';
-  const rawName = (user.displayName || fallbackName || 'Thành viên').trim().slice(0, 100);
+  const identity = getAccountIdentity(user);
+  const rawName = (user.displayName || identity.username || identity.displayLabel || 'Thành viên').trim().slice(0, 100);
   return {
     name: rawName || 'Thành viên',
     photoURL: user.photoURL || null,
-    email: user.email || '',
+    email: identity.publicEmail || '',
   };
 }
 
@@ -117,6 +121,7 @@ function normalizeCollabProject(id: string, data: Record<string, any>): CollabPr
     inviteEnabled: Boolean(data.inviteEnabled),
     inviteToken: data.inviteToken || '',
     inviteRole: data.inviteRole === 'viewer' ? 'viewer' : 'editor',
+    singleEditorPerAccount: data.singleEditorPerAccount !== false,
     createdAt: data.createdAt || new Date().toISOString(),
     updatedAt: data.updatedAt || new Date().toISOString(),
   };
@@ -134,6 +139,7 @@ export async function createCollabProject(
     htmlCode: string;
     cssCode?: string;
     jsCode?: string;
+    singleEditorPerAccount?: boolean;
   }
 ): Promise<CollabProject> {
   if (!db) throw new Error('Cơ sở dữ liệu Firestore chưa sẵn sàng');
@@ -156,6 +162,7 @@ export async function createCollabProject(
     inviteEnabled: true,
     inviteToken,
     inviteRole: 'editor',
+    singleEditorPerAccount: input.singleEditorPerAccount !== false,
     createdAt: now,
     updatedAt: now,
   };
@@ -174,6 +181,7 @@ export async function createCollabProject(
       stateBase64,
       updatedBy: user.uid,
       updatedAt: now,
+      watermarkAt: now,
     });
 
     await setDoc(doc(db, 'collabInvites', inviteToken), {
@@ -242,11 +250,17 @@ export async function loadCollabProjectCode(projectId: string): Promise<{
   const snapPath = `collabProjects/${projectId}/snapshots/latest`;
   try {
     const snapDoc = await getDoc(doc(db, 'collabProjects', projectId, 'snapshots', 'latest'));
-    const snapshotBase64 = snapDoc.exists() ? (snapDoc.data().stateBase64 as string) : null;
+    const snapData = snapDoc.exists() ? snapDoc.data() : null;
+    const snapshotBase64 = snapData ? (snapData.stateBase64 as string) : null;
+    const cursor = getSnapshotCursor(snapData);
 
+    const constraints: QueryConstraint[] = [orderBy('createdAt', 'asc')];
+    if (cursor) {
+      constraints.push(startAfter(cursor));
+    }
     const updatesQuery = query(
       collection(db, 'collabProjects', projectId, 'updates'),
-      orderBy('createdAt', 'asc')
+      ...constraints
     );
     const updatesSnap = await getDocs(updatesQuery);
     const chunks: string[] = [];
@@ -336,7 +350,7 @@ export function subscribeCollabProject(
  */
 export async function updateCollabProjectMeta(
   projectId: string,
-  updates: Partial<Pick<CollabProject, 'title' | 'description' | 'languages'>>,
+  updates: Partial<Pick<CollabProject, 'title' | 'description' | 'languages' | 'singleEditorPerAccount'>>,
   activeInviteToken?: string
 ): Promise<void> {
   if (!db) throw new Error('Cơ sở dữ liệu Firestore chưa sẵn sàng');
@@ -351,6 +365,9 @@ export async function updateCollabProjectMeta(
   }
   if (updates.languages !== undefined) {
     payload.languages = updates.languages.length > 0 ? updates.languages : ['html'];
+  }
+  if (updates.singleEditorPerAccount !== undefined) {
+    payload.singleEditorPerAccount = Boolean(updates.singleEditorPerAccount);
   }
 
   const docPath = `collabProjects/${projectId}`;

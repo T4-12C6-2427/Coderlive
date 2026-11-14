@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { runCloudDiagnostic, CloudDiagnosticResult } from '../lib/cloudHealth';
 import { useAuth } from '../contexts/AuthContext';
+import { getUserDiagnosticLabel } from '../lib/usernameAuth';
 
 interface CloudDiagnosticModalProps {
   isOpen: boolean;
@@ -132,7 +133,7 @@ export const CloudDiagnosticModal: React.FC<CloudDiagnosticModalProps> = ({
               <div className="col-span-2 sm:col-span-1">
                 <span className="text-[10px] text-muted block uppercase font-mono">Tài khoản</span>
                 <span className="font-semibold text-primary truncate block font-mono">
-                  {currentUser ? currentUser.email || 'Đã đăng nhập' : 'Khách (Guest)'}
+                  {currentUser ? getUserDiagnosticLabel(currentUser) : 'Khách (Guest)'}
                 </span>
               </div>
             </div>

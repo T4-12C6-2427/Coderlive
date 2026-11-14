@@ -74,6 +74,7 @@ service cloud.firestore {
         && data.inviteToken.size() >= 16
         && data.inviteToken.size() <= 128
         && data.inviteRole in ['editor', 'viewer']
+        && (!('singleEditorPerAccount' in data) || data.singleEditorPerAccount is bool)
         && data.createdAt is string
         && data.updatedAt is string;
     }
@@ -109,21 +110,29 @@ service cloud.firestore {
     }
 
     function isValidUpdateChunk() {
-      return request.resource.data.keys().hasOnly(['updateBase64', 'authorId', 'createdAt'])
+      return request.resource.data.keys().hasOnly(['updateBase64', 'authorId', 'createdAt', 'clientId', 'seq'])
+        && request.resource.data.keys().hasAll(['updateBase64', 'authorId', 'createdAt'])
         && request.resource.data.updateBase64 is string
         && request.resource.data.updateBase64.size() >= 1
         && request.resource.data.updateBase64.size() <= 900000
         && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.createdAt is string;
+        && request.resource.data.createdAt is string
+        && request.resource.data.createdAt.size() <= 64
+        && (!('clientId' in request.resource.data) || (request.resource.data.clientId is int && request.resource.data.clientId >= 0))
+        && (!('seq' in request.resource.data) || (request.resource.data.seq is int && request.resource.data.seq >= 0));
     }
 
     function isValidSnapshot() {
-      return request.resource.data.keys().hasOnly(['stateBase64', 'updatedBy', 'updatedAt'])
+      return request.resource.data.keys().hasOnly(['stateBase64', 'updatedBy', 'updatedAt', 'clientId', 'watermarkAt'])
+        && request.resource.data.keys().hasAll(['stateBase64', 'updatedBy', 'updatedAt'])
         && request.resource.data.stateBase64 is string
         && request.resource.data.stateBase64.size() >= 1
         && request.resource.data.stateBase64.size() <= 950000
         && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedAt is string;
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedAt.size() <= 64
+        && (!('clientId' in request.resource.data) || (request.resource.data.clientId is int && request.resource.data.clientId >= 0))
+        && (!('watermarkAt' in request.resource.data) || (request.resource.data.watermarkAt is string && request.resource.data.watermarkAt.size() <= 64));
     }
 
     match /collabProjects/{projectId} {

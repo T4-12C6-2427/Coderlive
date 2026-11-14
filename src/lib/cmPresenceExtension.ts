@@ -30,7 +30,7 @@ import { getContrastingText } from './themeEngine';
 
 const LABEL_INACTIVITY_MS = 3000;
 const FLASH_DURATION_MS = 1050;
-const PRESENCE_RENDER_THROTTLE_MS = 50;
+const PRESENCE_RENDER_THROTTLE_MS = 100;
 
 export interface PresenceExtensionInput {
   remoteSessions: PresenceSession[];

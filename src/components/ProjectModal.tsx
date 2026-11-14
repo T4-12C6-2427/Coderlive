@@ -9,13 +9,14 @@ export interface ProjectFormData {
   description: string;
   languages: ('html' | 'css' | 'js')[];
   projectType?: 'personal' | 'collab';
+  singleEditorPerAccount?: boolean;
 }
 
 export interface ProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode?: 'create' | 'edit';
-  initialData?: Partial<Project> | null;
+  initialData?: (Partial<Project> & { ownerId?: string; singleEditorPerAccount?: boolean }) | null;
   existingProjects?: Project[];
   onSubmit: (data: ProjectFormData) => Promise<void>;
   isGuest?: boolean;
@@ -38,6 +39,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   const [description, setDescription] = useState('');
   const [languages, setLanguages] = useState<('html' | 'css' | 'js')[]>(['html', 'css', 'js']);
   const [projectType, setProjectType] = useState<'personal' | 'collab'>(defaultProjectType);
+  const [singleEditorPerAccount, setSingleEditorPerAccount] = useState<boolean>(true);
   const [touched, setTouched] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -57,11 +59,13 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
             : ['html', 'css', 'js']
         );
         setProjectType(mode === 'edit' ? 'personal' : defaultProjectType);
+        setSingleEditorPerAccount(initialData.singleEditorPerAccount !== false);
       } else {
         setTitle('');
         setDescription('');
         setLanguages(['html', 'css', 'js']);
         setProjectType(defaultProjectType);
+        setSingleEditorPerAccount(true);
       }
       setTouched(false);
       setErrorMessage(null);
@@ -140,11 +144,15 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
     setErrorMessage(null);
 
     try {
+      const isCollab =
+        (mode === 'create' && projectType === 'collab') ||
+        (mode === 'edit' && Boolean(initialData?.ownerId));
       await onSubmit({
         title: finalTitle,
         description: description.trim(),
         languages,
         projectType: mode === 'create' ? projectType : undefined,
+        singleEditorPerAccount: isCollab ? singleEditorPerAccount : undefined,
       });
       onClose();
     } catch (err) {
@@ -444,6 +452,43 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Single-editor-per-account toggle (Collab project only) */}
+        {((mode === 'create' && projectType === 'collab') ||
+          (mode === 'edit' && Boolean(initialData?.ownerId))) && (
+          <div className="p-3 rounded-[var(--radius-md)] bg-panel border border-default flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <label
+                htmlFor="collab-single-editor-toggle"
+                className="text-xs font-semibold text-primary block cursor-pointer"
+              >
+                Chỉ 1 phiên chỉnh sửa mỗi tài khoản
+              </label>
+              <p className="text-[11px] text-muted leading-snug">
+                Ngăn trùng lặp thao tác khi cùng tài khoản mở nhiều tab hoặc thiết bị; phiên khác sẽ mở ở chế độ chỉ xem.
+              </p>
+            </div>
+            <button
+              id="collab-single-editor-toggle"
+              type="button"
+              role="switch"
+              aria-checked={singleEditorPerAccount}
+              disabled={isSubmitting}
+              onClick={() => setSingleEditorPerAccount((prev) => !prev)}
+              className={`touch-target-h relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors cursor-pointer ${
+                singleEditorPerAccount
+                  ? 'bg-accent border-transparent'
+                  : 'bg-elevated border-default'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition-transform ${
+                  singleEditorPerAccount ? 'translate-x-5' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Guest Warning / Gentle Hint */}
         {isGuest && (

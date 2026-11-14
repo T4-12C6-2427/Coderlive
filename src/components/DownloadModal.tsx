@@ -5,14 +5,16 @@ interface DownloadModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultTitle: string;
-  code: string;
+  code?: string;
+  getCode?: () => string;
 }
 
 export const DownloadModal: React.FC<DownloadModalProps> = ({
   isOpen,
   onClose,
   defaultTitle,
-  code,
+  code = '',
+  getCode,
 }) => {
   const [extension, setExtension] = useState<'.html' | '.htm'>('.html');
   const [fileName, setFileName] = useState('index');
@@ -37,8 +39,9 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
 
   const handleDownload = () => {
     try {
+      const resolvedCode = getCode ? getCode() : code;
       // Create UTF-8 encoded Blob with explicit charset
-      const blob = new Blob([code], { type: 'text/html;charset=utf-8' });
+      const blob = new Blob([resolvedCode], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

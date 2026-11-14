@@ -13,6 +13,7 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { CollabInviteRole, CollabProject } from '../../types';
+import { extractUsernameFromSyntheticEmail, getPublicUserEmail } from '../../lib/usernameAuth';
 
 interface MemberManagementModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ interface MemberManagementModalProps {
   onTransferOwnership: (newOwnerUid: string) => Promise<void>;
   onLeaveProject: () => Promise<void>;
   onOpenInvite?: () => void;
+  onToggleSingleEditor?: (enabled: boolean) => Promise<void>;
 }
 
 export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
@@ -36,8 +38,10 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
   onTransferOwnership,
   onLeaveProject,
   onOpenInvite,
+  onToggleSingleEditor,
 }) => {
   const [busyUid, setBusyUid] = useState<string | null>(null);
+  const [isTogglingLockSetting, setIsTogglingLockSetting] = useState(false);
   const [confirmRemoveUid, setConfirmRemoveUid] = useState<string | null>(null);
   const [confirmTransferUid, setConfirmTransferUid] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -160,11 +164,58 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
           </div>
         )}
 
+        {isOwner && onToggleSingleEditor && (
+          <div className="flex items-center justify-between gap-3 p-3 rounded-[var(--radius-md)] bg-panel border border-default">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <label
+                htmlFor="members-single-editor-toggle"
+                className="text-xs font-semibold text-primary block cursor-pointer"
+              >
+                Chỉ 1 phiên chỉnh sửa mỗi tài khoản
+              </label>
+              <p className="text-[11px] text-muted leading-snug">
+                Ngăn xung đột khi cùng tài khoản mở nhiều tab/thiết bị. Tắt nếu muốn cho phép sửa đồng thời ở nhiều tab.
+              </p>
+            </div>
+            <button
+              id="members-single-editor-toggle"
+              type="button"
+              role="switch"
+              aria-checked={project.singleEditorPerAccount !== false}
+              disabled={isTogglingLockSetting}
+              onClick={async () => {
+                setError(null);
+                setIsTogglingLockSetting(true);
+                try {
+                  await onToggleSingleEditor(project.singleEditorPerAccount === false);
+                } catch {
+                  setError('Không thể cập nhật cài đặt phiên chỉnh sửa.');
+                } finally {
+                  setIsTogglingLockSetting(false);
+                }
+              }}
+              className={`touch-target-h relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors cursor-pointer disabled:opacity-50 ${
+                project.singleEditorPerAccount !== false
+                  ? 'bg-accent border-transparent'
+                  : 'bg-elevated border-default'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition-transform ${
+                  project.singleEditorPerAccount !== false ? 'translate-x-5' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        )}
+
         <div className="space-y-2 max-h-72 overflow-y-auto overscroll-contain pr-1">
           {memberEntries.map(([uid, role]) => {
             const profile = project.memberProfiles[uid];
             const displayName = profile?.name || 'Thành viên';
-            const email = profile?.email;
+            const publicEmail = getPublicUserEmail(profile?.email);
+            const legacyUsername = extractUsernameFromSyntheticEmail(profile?.email);
+            const email = publicEmail || (legacyUsername && legacyUsername !== displayName ? `@${legacyUsername}` : '');
             const photoURL = profile?.photoURL;
             const isSelf = uid === currentUserId;
             const isTargetOwner = role === 'owner';

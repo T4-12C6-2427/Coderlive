@@ -170,7 +170,7 @@ export const PresenceAvatarStack: React.FC<PresenceAvatarStackProps> = ({
               />
 
               {/* Huy hiệu nhỏ khi 1 người mở nhiều tab */}
-              {user.sessionCount > 1 && !isSelf && (
+              {user.sessionCount > 1 && (
                 <span
                   aria-label={`${user.sessionCount} tab đang mở`}
                   className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-elevated border border-default text-[8px] font-mono font-bold text-primary flex items-center justify-center"

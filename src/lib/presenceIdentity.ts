@@ -1,4 +1,5 @@
 import { CollabMemberProfile, CollabRole, PresenceUser } from '../types';
+import { extractUsernameFromSyntheticEmail, getPublicUserEmail } from './usernameAuth';
 
 /**
  * Bảng 12 màu riêng biệt đạt chuẩn tương phản WCAG AA (>= 4.5:1) khi đặt chữ trắng (#FFFFFF) lên nền màu.
@@ -48,9 +49,13 @@ export function getPresenceDisplayName(
   const authName = user?.displayName?.trim();
   if (authName) return authName.slice(0, 100);
 
-  const email = user?.email || profile?.email || '';
-  if (email.includes('@')) {
-    const prefix = email.split('@')[0].trim();
+  const rawEmail = user?.email || profile?.email || '';
+  const username = extractUsernameFromSyntheticEmail(rawEmail);
+  if (username) return username.slice(0, 100);
+
+  const publicEmail = getPublicUserEmail(rawEmail);
+  if (publicEmail && publicEmail.includes('@')) {
+    const prefix = publicEmail.split('@')[0].trim();
     if (prefix) return prefix.slice(0, 100);
   }
 

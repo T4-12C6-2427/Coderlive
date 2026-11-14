@@ -73,6 +73,11 @@ import {
   CollabPreviewSyncState,
 } from './types';
 import {
+  collabPresenceStore,
+  useCollabEditLock,
+  useCollabPresenceConnected,
+} from './lib/collabPresenceStore';
+import {
   GuestDraft,
   RecentProjectRef,
   capturePreviousGuestDraftOnStartup,
@@ -83,6 +88,7 @@ import {
   removeRecentProject,
 } from './lib/draftsAndRecents';
 import { useAuth } from './contexts/AuthContext';
+import { formatPublicEmailOrUsername } from './lib/usernameAuth';
 import {
   getUserProjects,
   getGuestProjects,
@@ -123,8 +129,13 @@ import {
   subscribeCollabPreviewSync,
   publishCollabPreviewSync,
 } from './services/collabSideService';
-import { CollabProvider } from './lib/CollabProvider';
+import { CollabProvider, electCompactionLeader } from './lib/CollabProvider';
 import { PresenceManager, PresenceJoinLeaveNotice } from './lib/PresenceManager';
+import { CollabEditLockManager } from './lib/CollabEditLockManager';
+import {
+  CollabEditLockBanner,
+  CollabEditLockModal,
+} from './components/collab/CollabEditLockModal';
 import { getPresenceDisplayName, getUserPresenceColor } from './lib/presenceIdentity';
 import { testConnection, isFirebaseConfigValid, firebaseConfigError, rtdb } from './lib/firebase';
 import { combineCode, compilePreviewDocument, migrateProjectCode } from './lib/codeCompiler';
@@ -140,6 +151,27 @@ const STORAGE_KEYS = {
   ACTIVITY_BAR: 'coderlive_activity_bar_visible_v1',
   COLLAB_PRIVACY_NOTICE_SEEN: 'coderlive_collab_privacy_notice_seen_v1',
 };
+
+const CollabConnectionBanner: React.FC<{
+  isCollabActive: boolean;
+  isBrowserOnline: boolean;
+  collabSyncState: CollabSyncState;
+  hasRtdb: boolean;
+}> = React.memo(({ isCollabActive, isBrowserOnline, collabSyncState, hasRtdb }) => {
+  const isPresenceConnected = useCollabPresenceConnected();
+  if (!isCollabActive) return null;
+  if (isBrowserOnline && collabSyncState !== 'offline' && (!hasRtdb || isPresenceConnected)) {
+    return null;
+  }
+  return (
+    <div className="bg-warning-soft border-b border-[var(--color-warning)]/30 text-warning px-4 pl-safe pr-safe py-1.5 text-xs font-medium flex flex-wrap items-center justify-center text-center gap-2 z-20 flex-shrink-0 animate-in fade-in">
+      <WifiOff className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} />
+      <span>
+        Mất kết nối, đang thử lại — các thay đổi đang được lưu tạm và sẽ tự đồng bộ lại khi có mạng.
+      </span>
+    </div>
+  );
+});
 
 export default function App() {
   const viewport = useVisualViewport();
@@ -243,20 +275,22 @@ export default function App() {
   const [membersModalProjectId, setMembersModalProjectId] = useState<string | null>(null);
   const [pendingRemovePersonalAfterConvert, setPendingRemovePersonalAfterConvert] = useState<Project | null>(null);
   const [collabProviderInstance, setCollabProviderInstance] = useState<CollabProvider | null>(null);
+  const collabProviderRef = useRef<CollabProvider | null>(null);
+  collabProviderRef.current = collabProviderInstance;
   const [collabSyncState, setCollabSyncState] = useState<CollabSyncState>('connecting');
   const [collabDocReady, setCollabDocReady] = useState<boolean>(false);
+  const [isCollabCodeEmpty, setIsCollabCodeEmpty] = useState<boolean>(true);
 
-  // Stage 3 Real-time Presence & Follow Mode State
-  const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
-  const [remoteSessions, setRemoteSessions] = useState<PresenceSession[]>([]);
-  const [isPresenceConnected, setIsPresenceConnected] = useState<boolean>(true);
+  // Stage 3 Real-time Presence & Follow Mode State (stored externally via collabPresenceStore)
   const [isBrowserOnline, setIsBrowserOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
   const [followingUid, setFollowingUid] = useState<string | null>(null);
+  const followingUidRef = useRef<string | null>(null);
+  followingUidRef.current = followingUid;
   const [jumpTarget, setJumpTarget] = useState<{ uid: string; tab: EditorTab; nonce: number } | null>(null);
-  const [remoteInsertFlashes, setRemoteInsertFlashes] = useState<RemoteInsertFlash[]>([]);
   const presenceManagerRef = useRef<PresenceManager | null>(null);
+  const editLockManagerRef = useRef<CollabEditLockManager | null>(null);
   const remoteSessionsRef = useRef<PresenceSession[]>([]);
   const highlightInsertsRef = useRef<boolean>(settings.collabHighlightInserts !== false);
   highlightInsertsRef.current = settings.collabHighlightInserts !== false;
@@ -493,7 +527,25 @@ export default function App() {
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const isCodeEmpty = !htmlCode && !cssCode && !jsCode;
+  const isCodeEmpty =
+    activeCollabProject && !isSharedView
+      ? isCollabCodeEmpty
+      : !htmlCode && !cssCode && !jsCode;
+
+  const activeLanguagesRef = useRef<LanguageId[]>(activeLanguages);
+  activeLanguagesRef.current = activeLanguages;
+  const runHiddenTabsRef = useRef<RunHiddenTabs>(runHiddenTabs);
+  runHiddenTabsRef.current = runHiddenTabs;
+  const activeTabRef = useRef<EditorTab>(activeTab);
+  activeTabRef.current = activeTab;
+
+  const getLiveCodes = useCallback((): { html: string; css: string; js: string } => {
+    if (activeCollabProject && !isSharedView && collabProviderRef.current) {
+      const snap = collabProviderRef.current.getCodeSnapshot();
+      return { html: snap.htmlCode, css: snap.cssCode, js: snap.jsCode };
+    }
+    return { html: htmlCode, css: cssCode, js: jsCode };
+  }, [activeCollabProject, isSharedView, htmlCode, cssCode, jsCode]);
 
   // Test Firebase connection on boot
   useEffect(() => {
@@ -522,7 +574,8 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges, isCodeEmpty]);
 
-  // Derived collaborative team project permissions
+  // Derived collaborative team project permissions + Stage 3 Single-Editor-Per-Account guard
+  const editLockState = useCollabEditLock();
   const activeCollabRole =
     activeCollabProject && currentUser
       ? activeCollabProject.members[currentUser.uid]
@@ -534,7 +587,14 @@ export default function App() {
       activeCollabProject.ownerId === currentUser.uid &&
       activeCollabRole === 'owner'
   );
-  const isEditorReadOnly = isSharedView || isCollabViewer;
+  const isCollabLockReadOnly = Boolean(
+    activeCollabProject &&
+      !isSharedView &&
+      !isCollabViewer &&
+      (editLockState.status === 'readonly_conflict' ||
+        editLockState.status === 'takeover_available')
+  );
+  const isEditorReadOnly = isSharedView || isCollabViewer || isCollabLockReadOnly;
 
   const resolvedInviteModalProject = useMemo(() => {
     if (!inviteModalProjectId) return null;
@@ -572,7 +632,7 @@ export default function App() {
             setHtmlCode(proj.htmlCode);
             setCssCode(proj.cssCode || '');
             setJsCode(proj.jsCode || '');
-            setSharedAuthorEmail(proj.authorEmail);
+            setSharedAuthorEmail(formatPublicEmailOrUsername(proj.authorEmail) || undefined);
             updatePreviewSnapshot(proj.htmlCode, proj.cssCode || '', proj.jsCode || '');
           } else {
             console.warn('Không tìm thấy dự án được chia sẻ hoặc chia sẻ đã bị tắt.');
@@ -659,11 +719,12 @@ export default function App() {
       setCollabProviderInstance(null);
       setCollabDocReady(false);
       setCollabSyncState('connecting');
-      setRemoteInsertFlashes([]);
+      setIsCollabCodeEmpty(true);
       return;
     }
 
     let isCancelled = false;
+    let hasAppliedInitialSnapshotPreview = false;
     setCollabDocReady(false);
     setCollabSyncState('connecting');
 
@@ -672,6 +733,20 @@ export default function App() {
       projectId,
       userId: uid,
       canEdit: initialCanEdit,
+      onSnapshotReady: () => {
+        if (isCancelled) return;
+        setCollabDocReady(true);
+        const snap = provider.getCodeSnapshot();
+        const nextEmpty = !snap.htmlCode && !snap.cssCode && !snap.jsCode;
+        setIsCollabCodeEmpty(nextEmpty);
+        if (!hasAppliedInitialSnapshotPreview) {
+          hasAppliedInitialSnapshotPreview = true;
+          schedulePreviewAndChecksRef.current(
+            { html: snap.htmlCode, css: snap.cssCode, js: snap.jsCode },
+            true
+          );
+        }
+      },
       onSyncStateChange: (nextState) => {
         if (isCancelled) return;
         setCollabSyncState(nextState);
@@ -681,9 +756,16 @@ export default function App() {
       },
       onCodeChange: ({ htmlCode: nextHtml, cssCode: nextCss, jsCode: nextJs }) => {
         if (isCancelled) return;
-        setHtmlCode(nextHtml);
-        setCssCode(nextCss);
-        setJsCode(nextJs);
+        const nextEmpty = !nextHtml && !nextCss && !nextJs;
+        setIsCollabCodeEmpty((prev) => (prev === nextEmpty ? prev : nextEmpty));
+        const shouldRunImmediate = !hasAppliedInitialSnapshotPreview;
+        if (shouldRunImmediate) {
+          hasAppliedInitialSnapshotPreview = true;
+        }
+        schedulePreviewAndChecksRef.current(
+          { html: nextHtml, css: nextCss, js: nextJs },
+          shouldRunImmediate
+        );
       },
       onRemoteInsert: (inserts) => {
         if (isCancelled || !highlightInsertsRef.current) return;
@@ -703,10 +785,9 @@ export default function App() {
           };
         });
         if (flashes.length === 0) return;
-        setRemoteInsertFlashes((prev) => [...prev.slice(-30), ...flashes]);
+        collabPresenceStore.pushInsertFlashes(flashes);
         setTimeout(() => {
-          const cutoff = Date.now() - 1200;
-          setRemoteInsertFlashes((prev) => prev.filter((f) => f.createdAt > cutoff));
+          collabPresenceStore.pruneExpiredFlashes();
         }, 1250);
       },
       onError: (msg) => {
@@ -716,6 +797,13 @@ export default function App() {
       onSizeWarning: (msg) => {
         if (isCancelled) return;
         showToast(msg, 'warning');
+      },
+      onHighWriteUsage: () => {
+        if (isCancelled) return;
+        showToast(
+          'Phiên làm việc này đã ghi khá nhiều lượt đồng bộ lên máy chủ. Hệ thống đang gộp cập nhật để tiết kiệm hạn mức miễn phí.',
+          'warning'
+        );
       },
     });
 
@@ -730,10 +818,41 @@ export default function App() {
     };
   }, [activeCollabProject?.id, currentUser?.uid, isSharedView]);
 
-  // Keep provider edit permission in sync if owner changes member role live
+  // Keep provider edit permission in sync with member role and single-editor lock guard
   useEffect(() => {
-    collabProviderInstance?.setCanEdit(!isCollabViewer);
-  }, [collabProviderInstance, isCollabViewer]);
+    collabProviderInstance?.setCanEdit(!isCollabViewer && !isCollabLockReadOnly);
+  }, [collabProviderInstance, isCollabViewer, isCollabLockReadOnly]);
+
+  // Elect compaction leader & sync Follow Mode imperatively from collabPresenceStore (zero <App /> re-renders)
+  useEffect(() => {
+    const syncPresenceSideEffects = () => {
+      const users = collabPresenceStore.getOnlineUsers();
+      if (collabProviderInstance) {
+        const localSessionId = presenceManagerRef.current?.sessionId || '';
+        const election = electCompactionLeader(users, localSessionId);
+        collabProviderInstance.setCompactionElectionState({
+          isLeader: election.isLeader,
+          activeEditorCount: election.activeEditorCount,
+        });
+      }
+
+      const fUid = followingUidRef.current;
+      if (fUid && users.length > 0) {
+        const target = users.find((u) => u.uid === fUid) || null;
+        if (!target) {
+          setFollowingUid(null);
+        } else if (
+          activeLanguagesRef.current.includes(target.tab) &&
+          activeTabRef.current !== target.tab
+        ) {
+          setActiveTab(target.tab);
+        }
+      }
+    };
+
+    syncPresenceSideEffects();
+    return collabPresenceStore.subscribeOnlineUsers(syncPresenceSideEffects);
+  }, [collabProviderInstance]);
 
   // Track browser online/offline state for connection-lost banner
   useEffect(() => {
@@ -759,12 +878,10 @@ export default function App() {
     const projectId = activeCollabProject?.id;
     const uid = currentUser?.uid;
     if (!projectId || !uid || isSharedView) {
-      setOnlineUsers([]);
-      setRemoteSessions([]);
       remoteSessionsRef.current = [];
+      collabPresenceStore.resetPresence();
       setFollowingUid(null);
       setJumpTarget(null);
-      setIsPresenceConnected(true);
       return;
     }
 
@@ -789,6 +906,8 @@ export default function App() {
       return `${notice.users[0].name} và ${notice.users.length - 1} người khác ${action}`;
     };
 
+    let lockManager: CollabEditLockManager | null = null;
+
     const manager = new PresenceManager({
       projectId,
       uid,
@@ -801,12 +920,13 @@ export default function App() {
       onStateChange: ({ onlineUsers: nextUsers, remoteSessions: nextRemote }) => {
         if (isCancelled) return;
         remoteSessionsRef.current = nextRemote;
-        setOnlineUsers(nextUsers);
-        setRemoteSessions(nextRemote);
+        collabPresenceStore.setPresenceState(nextUsers, nextRemote);
+        const selfSessions = nextUsers.find((u) => u.uid === uid)?.sessions || [];
+        lockManager?.updateSessionsForUid(selfSessions);
       },
       onConnectionChange: (connected) => {
         if (isCancelled) return;
-        setIsPresenceConnected(connected);
+        collabPresenceStore.setIsConnected(connected);
       },
       onJoinLeaveNotice: (notice) => {
         if (isCancelled) return;
@@ -818,15 +938,38 @@ export default function App() {
       },
     });
 
+    lockManager = new CollabEditLockManager({
+      projectId,
+      uid,
+      localSessionId: manager.sessionId,
+      role: initialRole,
+      singleEditorPerAccount: activeCollabProject.singleEditorPerAccount !== false,
+      onSyncPresenceLock: (isLockHolder, lockClaimedAt) => {
+        manager.updateEditLockClaim(isLockHolder, lockClaimedAt);
+      },
+      onStateChange: (result) => {
+        if (isCancelled) return;
+        collabPresenceStore.setEditLock(result.snapshot);
+        collabProviderRef.current?.setCanEdit(result.canEdit);
+      },
+      onPreempted: () => {
+        if (isCancelled) return;
+        showToast('Quyền chỉnh sửa đã được chuyển sang phiên khác của bạn', 'info');
+      },
+    });
+
     presenceManagerRef.current = manager;
+    editLockManagerRef.current = lockManager;
     manager.start();
+    lockManager.reconcile();
 
     return () => {
       isCancelled = true;
       presenceManagerRef.current = null;
+      editLockManagerRef.current = null;
       remoteSessionsRef.current = [];
-      setOnlineUsers([]);
-      setRemoteSessions([]);
+      lockManager?.destroy();
+      collabPresenceStore.resetPresence();
       setFollowingUid(null);
       setJumpTarget(null);
       void manager.destroy();
@@ -834,6 +977,15 @@ export default function App() {
     // Chỉ khởi tạo lại khi đổi dự án hoặc tài khoản — cập nhật tab/role/tên qua các hàm patch bên dưới
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCollabProject?.id, currentUser?.uid, isSharedView]);
+
+  // Đồng bộ cấu hình khóa phiên chỉnh sửa khi owner bật/tắt cài đặt hoặc đổi vai trò/tab
+  useEffect(() => {
+    editLockManagerRef.current?.updateConfig({
+      role: activeCollabRole,
+      singleEditorPerAccount: activeCollabProject?.singleEditorPerAccount !== false,
+      tab: activeTab,
+    });
+  }, [activeCollabRole, activeCollabProject?.singleEditorPerAccount, activeTab]);
 
   // Đồng bộ vai trò, tên hiển thị và tab đang mở lên PresenceManager mà không ngắt kết nối
   useEffect(() => {
@@ -915,23 +1067,7 @@ export default function App() {
     };
   }, [activeCollabProject?.id, currentUser?.uid, isSharedView]);
 
-  // Chế độ Theo dõi (Follow mode)
-  const followingUser = useMemo(() => {
-    if (!followingUid) return null;
-    return onlineUsers.find((u) => u.uid === followingUid) || null;
-  }, [followingUid, onlineUsers]);
-
-  useEffect(() => {
-    if (followingUid && onlineUsers.length > 0 && !followingUser) {
-      setFollowingUid(null);
-    }
-  }, [followingUid, followingUser, onlineUsers.length]);
-
-  useEffect(() => {
-    if (followingUser && activeLanguages.includes(followingUser.tab) && activeTab !== followingUser.tab) {
-      setActiveTab(followingUser.tab);
-    }
-  }, [followingUser, activeLanguages, activeTab]);
+  // Chế độ Theo dõi (Follow mode) khi chuyển tab thủ công sẽ do tab handlers & subscriber xử lý
 
   const handleToggleFollowUser = useCallback(
     (user: PresenceUser) => {
@@ -1137,47 +1273,135 @@ export default function App() {
     [isSharedView, activeCollabProject?.id, activeProject?.id, currentUser?.uid]
   );
 
-  const effectivePreviewCodes = useMemo(
-    () =>
-      getEffectivePreviewCodes(
-        { html: htmlCode, css: cssCode, js: jsCode },
-        activeLanguages,
-        runHiddenTabs
-      ),
-    [htmlCode, cssCode, jsCode, activeLanguages, runHiddenTabs]
-  );
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lintDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lintIdleHandleRef = useRef<number | null>(null);
+  const lintFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Real-time preview update (debounce ~500ms, xóa lỗi cũ khi chạy lại bản mới)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const prev = lastCompiledCodesRef.current;
-      if (
-        prev.html === effectivePreviewCodes.html &&
-        prev.css === effectivePreviewCodes.css &&
-        prev.js === effectivePreviewCodes.js
-      ) {
+  const cancelScheduledPreviewAndChecks = useCallback(() => {
+    if (previewTimerRef.current) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    if (lintDebounceTimerRef.current) {
+      clearTimeout(lintDebounceTimerRef.current);
+      lintDebounceTimerRef.current = null;
+    }
+    if (lintIdleHandleRef.current !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+      (window as any).cancelIdleCallback(lintIdleHandleRef.current);
+      lintIdleHandleRef.current = null;
+    }
+    if (lintFallbackTimerRef.current) {
+      clearTimeout(lintFallbackTimerRef.current);
+      lintFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const schedulePreviewAndChecks = useCallback(
+    (rawCodes: { html: string; css: string; js: string }, immediatePreview = false) => {
+      const eff = getEffectivePreviewCodes(
+        rawCodes,
+        activeLanguagesRef.current,
+        runHiddenTabsRef.current
+      );
+
+      if (previewTimerRef.current) {
+        clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+
+      const applyPreviewIfChanged = () => {
+        const prev = lastCompiledCodesRef.current;
+        if (prev.html === eff.html && prev.css === eff.css && prev.js === eff.js) {
+          return;
+        }
+        updatePreviewSnapshot(eff.html, eff.css, eff.js, true);
+      };
+
+      if (immediatePreview) {
+        applyPreviewIfChanged();
+      } else {
+        previewTimerRef.current = setTimeout(() => {
+          previewTimerRef.current = null;
+          applyPreviewIfChanged();
+        }, 700);
+      }
+
+      if (lintDebounceTimerRef.current) {
+        clearTimeout(lintDebounceTimerRef.current);
+        lintDebounceTimerRef.current = null;
+      }
+      if (lintIdleHandleRef.current !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        (window as any).cancelIdleCallback(lintIdleHandleRef.current);
+        lintIdleHandleRef.current = null;
+      }
+      if (lintFallbackTimerRef.current) {
+        clearTimeout(lintFallbackTimerRef.current);
+        lintFallbackTimerRef.current = null;
+      }
+
+      if (!eff.html && !eff.css && !eff.js) {
+        setStaticIssues((prev) => (prev.length === 0 ? prev : []));
         return;
       }
-      updatePreviewSnapshot(
-        effectivePreviewCodes.html,
-        effectivePreviewCodes.css,
-        effectivePreviewCodes.js,
-        true
-      );
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [effectivePreviewCodes, updatePreviewSnapshot]);
+
+      lintDebounceTimerRef.current = setTimeout(() => {
+        lintDebounceTimerRef.current = null;
+        const runLint = () => {
+          lintIdleHandleRef.current = null;
+          lintFallbackTimerRef.current = null;
+          setStaticIssues(runStaticChecks(eff.html, eff.css));
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+          lintIdleHandleRef.current = (window as any).requestIdleCallback(runLint, { timeout: 500 });
+        } else {
+          lintFallbackTimerRef.current = setTimeout(runLint, 120);
+        }
+      }, 450);
+    },
+    [updatePreviewSnapshot]
+  );
+
+  const schedulePreviewAndChecksRef = useRef(schedulePreviewAndChecks);
+  schedulePreviewAndChecksRef.current = schedulePreviewAndChecks;
+
+  useEffect(() => {
+    return () => cancelScheduledPreviewAndChecks();
+  }, [cancelScheduledPreviewAndChecks]);
+
+  // Real-time preview (~700ms debounce) & idle static checks for personal mode or tab-visibility updates
+  useEffect(() => {
+    if (activeCollabProject && !isSharedView) {
+      if (collabProviderRef.current) {
+        schedulePreviewAndChecks(getLiveCodes());
+      }
+      return;
+    }
+    schedulePreviewAndChecks({ html: htmlCode, css: cssCode, js: jsCode });
+  }, [
+    activeCollabProject,
+    isSharedView,
+    htmlCode,
+    cssCode,
+    jsCode,
+    activeLanguages,
+    runHiddenTabs,
+    getLiveCodes,
+    schedulePreviewAndChecks,
+  ]);
 
   const isPreviewEmpty =
     !previewSnapshot.html && !previewSnapshot.css && !previewSnapshot.js;
 
   const resetToBlankEditor = useCallback(() => {
+    cancelScheduledPreviewAndChecks();
     setActiveCollabProject(null);
     setActiveProject(null);
     setProjectTitle('Dự án chưa đặt tên');
     setHtmlCode('');
     setCssCode('');
     setJsCode('');
+    setIsCollabCodeEmpty(true);
     setActiveTemplateId(undefined);
     setActiveLanguages(['html', 'css', 'js']);
     setRunHiddenTabs({ css: true, js: true });
@@ -1186,19 +1410,7 @@ export default function App() {
     setStaticIssues([]);
     setCloudSaveStatus('idle');
     setHasUnsavedChanges(false);
-  }, [updatePreviewSnapshot]);
-
-  // Kiểm tra tĩnh HTML/CSS tự động (debounce ~250ms; bỏ qua khi trình soạn thảo trống)
-  useEffect(() => {
-    if (!effectivePreviewCodes.html && !effectivePreviewCodes.css && !effectivePreviewCodes.js) {
-      setStaticIssues([]);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setStaticIssues(runStaticChecks(effectivePreviewCodes.html, effectivePreviewCodes.css));
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [effectivePreviewCodes.html, effectivePreviewCodes.css, effectivePreviewCodes.js]);
+  }, [cancelScheduledPreviewAndChecks, updatePreviewSnapshot]);
 
   // On guest startup, preserve previous non-empty session scratch code as a draft in "Bản nháp gần nhất" (FIFO max 5)
   useEffect(() => {
@@ -1396,7 +1608,7 @@ export default function App() {
         htmlCode: snap.html || htmlCode,
         cssCode: snap.css || cssCode,
         jsCode: snap.js || jsCode,
-        authorEmail: currentUser.email || undefined,
+        authorEmail: formatPublicEmailOrUsername(currentUser.email) || undefined,
       });
       const updatedList = await getUserProjects(currentUser.uid);
       setProjects(updatedList);
@@ -1683,9 +1895,11 @@ export default function App() {
         }
       }
 
+      const liveScratch = getLiveCodes();
+
       // 2. Starter templates matching selected types (or current scratch code if triggered by Save button)
       const minimalHtml = fromScratch
-        ? htmlCode
+        ? liveScratch.html
         : `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -1700,12 +1914,12 @@ export default function App() {
 </html>`;
 
       const cssStarter = fromScratch
-        ? cssCode
+        ? liveScratch.css
         : formData.languages.includes('css')
         ? `/* Viết mã CSS để tùy biến giao diện tại đây */\n`
         : '';
       const jsStarter = fromScratch
-        ? jsCode
+        ? liveScratch.js
         : formData.languages.includes('js')
         ? `// Viết mã JavaScript để tạo tương tác tại đây\n`
         : '';
@@ -1721,6 +1935,7 @@ export default function App() {
           htmlCode: minimalHtml,
           cssCode: cssStarter,
           jsCode: jsStarter,
+          singleEditorPerAccount: formData.singleEditorPerAccount,
         });
         await handleSelectCollabProject(newCollab);
         localStorage.removeItem(STORAGE_KEYS.TABS_CODE);
@@ -1738,7 +1953,7 @@ export default function App() {
           htmlCode: minimalHtml,
           cssCode: cssStarter,
           jsCode: jsStarter,
-          authorEmail: currentUser?.email || undefined,
+          authorEmail: formatPublicEmailOrUsername(currentUser?.email) || undefined,
         });
 
         let updatedList: Project[] = [];
@@ -1773,6 +1988,7 @@ export default function App() {
             title: formData.title,
             description: formData.description,
             languages: formData.languages,
+            singleEditorPerAccount: formData.singleEditorPerAccount,
           },
           targetCollab.inviteToken
         );
@@ -1874,11 +2090,7 @@ export default function App() {
         runHiddenTabs: nextRunHidden,
       });
 
-      const eff = getEffectivePreviewCodes(
-        { html: htmlCode, css: cssCode, js: jsCode },
-        newLangs,
-        nextRunHidden
-      );
+      const eff = getEffectivePreviewCodes(getLiveCodes(), newLangs, nextRunHidden);
       updatePreviewSnapshot(eff.html, eff.css, eff.js, false);
       setRefreshTrigger((prev) => prev + 1);
 
@@ -1906,9 +2118,7 @@ export default function App() {
       activeLanguages,
       runHiddenTabs,
       currentTabViewKey,
-      htmlCode,
-      cssCode,
-      jsCode,
+      getLiveCodes,
       updatePreviewSnapshot,
       activeProject,
       activeCollabProject,
@@ -1940,11 +2150,7 @@ export default function App() {
         runHiddenTabs: nextRunHidden,
       });
 
-      const eff = getEffectivePreviewCodes(
-        { html: htmlCode, css: cssCode, js: jsCode },
-        newLangs,
-        nextRunHidden
-      );
+      const eff = getEffectivePreviewCodes(getLiveCodes(), newLangs, nextRunHidden);
       updatePreviewSnapshot(eff.html, eff.css, eff.js, false);
       setRefreshTrigger((prev) => prev + 1);
 
@@ -1977,9 +2183,7 @@ export default function App() {
       runHiddenTabs,
       activeTab,
       currentTabViewKey,
-      htmlCode,
-      cssCode,
-      jsCode,
+      getLiveCodes,
       updatePreviewSnapshot,
       activeProject,
       activeCollabProject,
@@ -2107,7 +2311,12 @@ export default function App() {
   const handleToggleShare = async (shared: boolean) => {
     if (!currentUser || !activeProject) return;
     try {
-      await toggleShareProject(currentUser.uid, activeProject.id, shared, currentUser.email || undefined);
+      await toggleShareProject(
+        currentUser.uid,
+        activeProject.id,
+        shared,
+        formatPublicEmailOrUsername(currentUser.email) || undefined
+      );
       setActiveProject((prev) => (prev ? { ...prev, isShared: shared } : null));
       setProjects((prev) =>
         prev.map((p) => (p.id === activeProject.id ? { ...p, isShared: shared } : p))
@@ -2129,7 +2338,11 @@ export default function App() {
     }
 
     try {
-      const forked = await forkProject(currentUser.uid, currentUser.email || '', sharedProjectData);
+      const forked = await forkProject(
+        currentUser.uid,
+        formatPublicEmailOrUsername(currentUser.email) || '',
+        sharedProjectData
+      );
       const updatedList = await getUserProjects(currentUser.uid);
       setProjects(updatedList);
       setIsSharedView(false);
@@ -2205,35 +2418,12 @@ export default function App() {
     [activeLanguages, runHiddenTabs, currentTabViewKey]
   );
 
-  // Keyboard shortcuts (Ctrl+Enter / Cmd+Enter to Run, Ctrl+S to save)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleRun();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        handleManualSave();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [htmlCode, cssCode, jsCode, effectivePreviewCodes, projectTitle, currentUser, activeProject, activeCollabProject, collabProviderInstance, isEditorReadOnly]);
-
   // Run manually (Auto-clears console & stale runtime errors on each run)
   const handleRun = useCallback(() => {
-    const isEffectiveEmpty =
-      !effectivePreviewCodes.html &&
-      !effectivePreviewCodes.css &&
-      !effectivePreviewCodes.js;
+    const eff = getEffectivePreviewCodes(getLiveCodes(), activeLanguages, runHiddenTabs);
+    const isEffectiveEmpty = !eff.html && !eff.css && !eff.js;
 
-    updatePreviewSnapshot(
-      effectivePreviewCodes.html,
-      effectivePreviewCodes.css,
-      effectivePreviewCodes.js,
-      isEffectiveEmpty
-    );
+    updatePreviewSnapshot(eff.html, eff.css, eff.js, isEffectiveEmpty);
     setRefreshTrigger((prev) => prev + 1);
     if (isEffectiveEmpty) {
       setConsoleMessages([]);
@@ -2247,7 +2437,7 @@ export default function App() {
         time: new Date().toLocaleTimeString('vi-VN'),
       },
     ]);
-  }, [effectivePreviewCodes, updatePreviewSnapshot]);
+  }, [getLiveCodes, activeLanguages, runHiddenTabs, updatePreviewSnapshot]);
 
   // Clear code
   const handleConfirmClear = useCallback(() => {
@@ -2269,11 +2459,12 @@ export default function App() {
 
   // Copy combined code
   const handleCopy = useCallback(async () => {
-    if (!htmlCode && !cssCode && !jsCode) {
+    const live = getLiveCodes();
+    if (!live.html && !live.css && !live.js) {
       showToast('Chưa có code', 'info');
       return;
     }
-    const fullCode = combineCode(htmlCode, cssCode, jsCode);
+    const fullCode = combineCode(live.html, live.css, live.js);
     try {
       await navigator.clipboard.writeText(fullCode);
       setIsCopied(true);
@@ -2288,7 +2479,7 @@ export default function App() {
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     }
-  }, [htmlCode, cssCode, jsCode, showToast]);
+  }, [getLiveCodes, showToast]);
 
   // Toggle layout
   const handleToggleLayout = useCallback(() => {
@@ -2356,7 +2547,8 @@ export default function App() {
   const handleFormatCode = useCallback(() => {
     if (isEditorReadOnly) return;
     try {
-      const current = activeTab === 'html' ? htmlCode : activeTab === 'css' ? cssCode : jsCode;
+      const live = getLiveCodes();
+      const current = activeTab === 'html' ? live.html : activeTab === 'css' ? live.css : live.js;
       const lines = current.split('\n');
       let indentLevel = 0;
       const formattedLines = lines.map((line) => {
@@ -2394,7 +2586,33 @@ export default function App() {
         else if (activeTab === 'js') setJsCode(formatted);
       }
     } catch {}
-  }, [activeTab, htmlCode, cssCode, jsCode, isEditorReadOnly, activeCollabProject, collabProviderInstance]);
+  }, [activeTab, getLiveCodes, isEditorReadOnly, activeCollabProject, collabProviderInstance]);
+
+  // Keyboard shortcuts (Ctrl+Enter / Cmd+Enter to Run, Ctrl+S to Save, Alt+Shift+F fallback to Format)
+  const shortcutHandlersRef = useRef({
+    handleRun,
+    handleManualSave,
+    handleFormatCode,
+  });
+  shortcutHandlersRef.current = { handleRun, handleManualSave, handleFormatCode };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        shortcutHandlersRef.current.handleRun();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        shortcutHandlersRef.current.handleManualSave();
+      } else if (!e.defaultPrevented && e.altKey && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        shortcutHandlersRef.current.handleFormatCode();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const openAuth = (mode: 'login' | 'signup') => {
     setAuthModalInitialMode(mode);
@@ -2583,7 +2801,6 @@ export default function App() {
             if (activeCollabProject) setMembersModalProjectId(activeCollabProject.id);
           }}
           collabProject={activeCollabProject}
-          onlineUsers={onlineUsers}
           followingUid={followingUid}
           onToggleFollow={handleToggleFollowUser}
           onJumpToUser={handleJumpToUser}
@@ -2595,16 +2812,22 @@ export default function App() {
         />
 
       {/* Connection-lost calm banner for collaborative projects */}
-      {activeCollabProject &&
-        !isSharedView &&
-        (!isBrowserOnline || collabSyncState === 'offline' || (Boolean(rtdb) && !isPresenceConnected)) && (
-          <div className="bg-warning-soft border-b border-[var(--color-warning)]/30 text-warning px-4 pl-safe pr-safe py-1.5 text-xs font-medium flex flex-wrap items-center justify-center text-center gap-2 z-20 flex-shrink-0 animate-in fade-in">
-            <WifiOff className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} />
-            <span>
-              Mất kết nối — các thay đổi đang được lưu tạm và sẽ tự đồng bộ lại khi có mạng.
-            </span>
-          </div>
-        )}
+      <CollabConnectionBanner
+        isCollabActive={Boolean(activeCollabProject && !isSharedView)}
+        isBrowserOnline={isBrowserOnline}
+        collabSyncState={collabSyncState}
+        hasRtdb={Boolean(rtdb)}
+      />
+
+      {/* Single-editor-per-account read-only lock banner */}
+      <CollabEditLockBanner
+        isCollabActive={Boolean(activeCollabProject && !isSharedView)}
+        isViewer={isCollabViewer}
+        onClaimEditLock={() => {
+          editLockManagerRef.current?.claimEditLock();
+          showToast('Đã tiếp quản quyền chỉnh sửa trên phiên này', 'success');
+        }}
+      />
 
       {/* One-time Privacy Notice in collaborative mode */}
       {activeCollabProject && !isSharedView && showCollabPrivacyNotice && (
@@ -2738,7 +2961,13 @@ export default function App() {
               onFormatCode={handleFormatCode}
               isReadOnly={isEditorReadOnly}
               canCustomizeTabs={!isSharedView}
-              readOnlyBadgeText={isCollabViewer ? 'Chế độ chỉ xem' : 'Chỉ đọc'}
+              readOnlyBadgeText={
+                isCollabViewer
+                  ? 'Chế độ chỉ xem'
+                  : isCollabLockReadOnly
+                  ? 'Chỉ xem (phiên khác đang sửa)'
+                  : 'Chỉ đọc'
+              }
               enabledLanguages={activeLanguages}
               onAddLanguage={handleAddLanguage}
               onRemoveLanguage={handleRequestRemoveLanguage}
@@ -2747,15 +2976,12 @@ export default function App() {
               collabYDoc={collabProviderInstance?.ydoc ?? null}
               collabSyncReady={collabDocReady}
               collabUndoManagers={collabProviderInstance?.undoManagers ?? null}
-              onlineUsers={onlineUsers}
-              remoteSessions={remoteSessions}
               currentUserId={currentUser?.uid || ''}
-              followingUser={followingUser}
+              followingUid={followingUid}
               onStopFollowing={() => setFollowingUid(null)}
               jumpTarget={jumpTarget}
               cursorJumpTarget={cursorJumpTarget}
               appliedHighlightTarget={appliedHighlightTarget}
-              remoteInsertFlashes={remoteInsertFlashes}
               onLocalCursorChange={handleLocalCursorChange}
               onLocalTyping={handleLocalTyping}
               onLocalInteraction={handleLocalEditorInteraction}
@@ -3035,6 +3261,29 @@ export default function App() {
             setInviteModalProjectId(resolvedMembersModalProject.id);
           }
         }}
+        onToggleSingleEditor={async (enabled) => {
+          if (!resolvedMembersModalProject) return;
+          await updateCollabProjectMeta(
+            resolvedMembersModalProject.id,
+            { singleEditorPerAccount: enabled },
+            resolvedMembersModalProject.inviteToken
+          );
+          showToast(
+            enabled
+              ? 'Đã bật giới hạn 1 phiên chỉnh sửa mỗi tài khoản'
+              : 'Đã cho phép một tài khoản sửa đồng thời nhiều tab'
+          );
+        }}
+      />
+
+      {/* Stage 3: Single-editor-per-account conflict / takeover modal */}
+      <CollabEditLockModal
+        lockState={editLockState}
+        onChooseReadOnly={() => editLockManagerRef.current?.chooseReadOnly()}
+        onClaimEditLock={() => {
+          editLockManagerRef.current?.claimEditLock();
+          showToast('Đã tiếp quản quyền chỉnh sửa trên phiên này', 'success');
+        }}
       />
 
       {/* Confirmation Modal to optionally delete old personal copy after converting to team project */}
@@ -3103,7 +3352,10 @@ export default function App() {
         isOpen={isDownloadModalOpen}
         onClose={() => setIsDownloadModalOpen(false)}
         defaultTitle={projectTitle}
-        code={combineCode(htmlCode, cssCode, jsCode)}
+        getCode={() => {
+          const live = getLiveCodes();
+          return combineCode(live.html, live.css, live.js);
+        }}
       />
 
       {/* Guest-to-Login Prompt Modal */}

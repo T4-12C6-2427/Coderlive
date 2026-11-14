@@ -56,6 +56,8 @@ import { IconButton } from './ui/IconButton';
 import { Button } from './ui/Button';
 import { Kbd } from './ui/Kbd';
 import { useIsTouch } from '../hooks/useViewport';
+import { formatPublicEmailOrUsername, getAccountIdentity } from '../lib/usernameAuth';
+import { useCollabOnlineUsers } from '../lib/collabPresenceStore';
 
 export interface HeaderProps {
   onRun: () => void;
@@ -173,7 +175,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCollabInvite,
   onOpenCollabMembers,
   collabProject = null,
-  onlineUsers = [],
+  onlineUsers: onlineUsersProp,
   followingUid = null,
   onToggleFollow,
   onJumpToUser,
@@ -183,6 +185,8 @@ export const Header: React.FC<HeaderProps> = ({
   hideOwnCursor = false,
   onToggleHideOwnCursor,
 }) => {
+  const storeOnlineUsers = useCollabOnlineUsers();
+  const onlineUsers = onlineUsersProp ?? storeOnlineUsers;
   const { currentUser, logout } = useAuth();
   const isTouch = useIsTouch();
 
@@ -193,6 +197,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showPeoplePanel, setShowPeoplePanel] = useState(false);
   const [peoplePanelCoords, setPeoplePanelCoords] = useState<{ top: number; right: number } | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
 
   // Trigger button and menu refs for portal positioning & outside click handling
   const moreBtnRef = useRef<HTMLButtonElement>(null);
@@ -220,6 +225,10 @@ export const Header: React.FC<HeaderProps> = ({
       titleInputRef.current.select();
     }
   }, [isEditingTitle]);
+
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [currentUser?.photoURL]);
 
   // Reset dropdowns on auth or project change
   useEffect(() => {
@@ -423,9 +432,9 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="truncate font-medium" title={currentProjectTitle}>
                 {currentProjectTitle}
               </span>
-              {sharedAuthorEmail && (
+              {formatPublicEmailOrUsername(sharedAuthorEmail) && (
                 <span className="text-[10px] text-muted hidden sm:inline truncate">
-                  ({sharedAuthorEmail})
+                  ({formatPublicEmailOrUsername(sharedAuthorEmail)})
                 </span>
               )}
             </div>
@@ -649,23 +658,34 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="h-4 w-px bg-[var(--border-default)] mx-0.5 hidden sm:block" />
 
               {/* 5. Account Avatar Button */}
-              {currentUser ? (
-                <button
-                  ref={userBtnRef}
-                  onClick={toggleUserDropdown}
-                  className="touch-target w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--border-subtle)] hover:bg-[var(--border-default)] border border-default flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
-                  title={isTouch ? undefined : currentUser.displayName || currentUser.email || 'Tài khoản người dùng'}
-                  aria-label="Tài khoản người dùng"
-                >
-                  <div className="w-5 h-5 rounded-full bg-accent text-accent-on flex items-center justify-center text-[10px] font-bold">
-                    {currentUser.displayName
-                      ? currentUser.displayName.charAt(0).toUpperCase()
-                      : currentUser.email
-                      ? currentUser.email.charAt(0).toUpperCase()
-                      : <UserIcon className="w-3 h-3" strokeWidth={1.5} />}
-                  </div>
-                </button>
-              ) : (
+              {currentUser ? (() => {
+                const identity = getAccountIdentity(currentUser);
+                const showPhoto = Boolean(currentUser.photoURL) && !avatarLoadError;
+                const initialChar = identity.displayLabel.charAt(0).toUpperCase();
+                return (
+                  <button
+                    ref={userBtnRef}
+                    onClick={toggleUserDropdown}
+                    className="touch-target w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--border-subtle)] hover:bg-[var(--border-default)] border border-default flex items-center justify-center transition-all cursor-pointer flex-shrink-0 overflow-hidden"
+                    title={isTouch ? undefined : identity.displayLabel}
+                    aria-label="Tài khoản người dùng"
+                  >
+                    {showPhoto ? (
+                      <img
+                        src={currentUser.photoURL!}
+                        alt={identity.displayLabel}
+                        referrerPolicy="no-referrer"
+                        onError={() => setAvatarLoadError(true)}
+                        className="w-5 h-5 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-5 h-5 rounded-full bg-accent text-accent-on flex items-center justify-center text-[10px] font-bold">
+                        {initialChar || <UserIcon className="w-3 h-3" strokeWidth={1.5} />}
+                      </div>
+                    )}
+                  </button>
+                );
+              })() : (
                 /* Guest Buttons */
                 <div className="touch-gap flex items-center gap-1 flex-shrink-0">
                   <button
@@ -1045,23 +1065,40 @@ export const Header: React.FC<HeaderProps> = ({
             role="menu"
           >
             {/* Header info */}
-            <div className="px-2.5 py-2 border-b border-subtle">
-              {currentUser.displayName ? (
-                <>
-                  <p className="text-xs font-semibold text-primary truncate">{currentUser.displayName}</p>
-                  <p className="text-[11px] text-muted font-mono truncate mt-0.5" title={currentUser.email || ''}>
-                    {currentUser.email}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-[10px] text-muted font-medium">Đang đăng nhập:</p>
-                  <p className="text-xs font-semibold text-primary truncate mt-0.5" title={currentUser.email || ''}>
-                    {currentUser.email}
-                  </p>
-                </>
-              )}
-            </div>
+            {(() => {
+              const identity = getAccountIdentity(currentUser);
+              const showPhoto = Boolean(currentUser.photoURL) && !avatarLoadError;
+              const initialChar = identity.displayLabel.charAt(0).toUpperCase();
+              const secondaryText =
+                identity.username && identity.googleEmail
+                  ? `@${identity.username} • ${identity.googleEmail}`
+                  : identity.secondaryLabel;
+              return (
+                <div className="px-2.5 py-2 border-b border-subtle flex items-center gap-2.5">
+                  {showPhoto ? (
+                    <img
+                      src={currentUser.photoURL!}
+                      alt={identity.displayLabel}
+                      referrerPolicy="no-referrer"
+                      onError={() => setAvatarLoadError(true)}
+                      className="w-8 h-8 rounded-full object-cover border border-default flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-accent text-accent-on flex items-center justify-center text-xs font-bold flex-shrink-0">
+                      {initialChar || <UserIcon className="w-4 h-4" strokeWidth={1.5} />}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-primary truncate">{identity.displayLabel}</p>
+                    {secondaryText && (
+                      <p className="text-[11px] text-muted font-mono truncate mt-0.5" title={secondaryText}>
+                        {secondaryText}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="py-1 space-y-0.5">
               <button

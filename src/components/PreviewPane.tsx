@@ -102,8 +102,19 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
   const syncRefreshNonceRef = useRef<number>(0);
   const lastAppliedSyncAtRef = useRef<number>(0);
 
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeRef0 = useRef<HTMLIFrameElement>(null);
+  const iframeRef1 = useRef<HTMLIFrameElement>(null);
   const consoleBottomRef = useRef<HTMLDivElement>(null);
+
+  const [slotDocs, setSlotDocs] = useState<[string, string]>(() => [compiledSrcDoc, '']);
+  const [slotEpochs, setSlotEpochs] = useState<[number, number]>([0, 0]);
+  const [activeSlot, setActiveSlot] = useState<0 | 1>(0);
+  const activeSlotRef = useRef<0 | 1>(0);
+  activeSlotRef.current = activeSlot;
+  const lastManualResetSigRef = useRef<string>(`${reloadKey}:${refreshTrigger}`);
+  const lastLoadedTokenRef = useRef<string>(channelToken);
+  const pendingTargetRef = useRef<{ slot: 0 | 1; token: string } | null>(null);
+  const pendingSwapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs ổn định để trình nghe postMessage luôn dùng sourceMap, code và token mới nhất
   const sourceMapRef = useRef(sourceMap);
@@ -115,11 +126,78 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
   const onRuntimeMessageRef = useRef(onRuntimeMessage);
   onRuntimeMessageRef.current = onRuntimeMessage;
 
+  // Double-buffering iframe: cập nhật nền ở iframe dự phòng rồi hoán đổi khi nạp xong để tránh nháy trắng
+  useEffect(() => {
+    const resetSig = `${reloadKey}:${refreshTrigger}`;
+    if (resetSig !== lastManualResetSigRef.current) {
+      lastManualResetSigRef.current = resetSig;
+      if (pendingSwapTimerRef.current) {
+        clearTimeout(pendingSwapTimerRef.current);
+        pendingSwapTimerRef.current = null;
+      }
+      pendingTargetRef.current = null;
+      lastLoadedTokenRef.current = channelToken;
+      setActiveSlot(0);
+      setSlotDocs([compiledSrcDoc, '']);
+      setSlotEpochs(([e0, e1]) => [e0 + 1, e1]);
+      return;
+    }
+
+    if (lastLoadedTokenRef.current === channelToken) {
+      return;
+    }
+    lastLoadedTokenRef.current = channelToken;
+
+    const currentActive = activeSlotRef.current;
+    const standbySlot: 0 | 1 = currentActive === 0 ? 1 : 0;
+
+    if (pendingSwapTimerRef.current) {
+      clearTimeout(pendingSwapTimerRef.current);
+      pendingSwapTimerRef.current = null;
+    }
+
+    pendingTargetRef.current = { slot: standbySlot, token: channelToken };
+    setSlotDocs((prev) =>
+      standbySlot === 0 ? [compiledSrcDoc, prev[1]] : [prev[0], compiledSrcDoc]
+    );
+
+    // Dự phòng nếu iframe mất quá lâu để kích hoạt onLoad (ví dụ tài nguyên ngoài chậm)
+    const targetToken = channelToken;
+    pendingSwapTimerRef.current = setTimeout(() => {
+      pendingSwapTimerRef.current = null;
+      if (pendingTargetRef.current?.token === targetToken) {
+        pendingTargetRef.current = null;
+        setActiveSlot(standbySlot);
+      }
+    }, 350);
+  }, [compiledSrcDoc, channelToken, reloadKey, refreshTrigger]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingSwapTimerRef.current) {
+        clearTimeout(pendingSwapTimerRef.current);
+        pendingSwapTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleSlotLoad = (slot: 0 | 1) => {
+    const pending = pendingTargetRef.current;
+    if (!pending || pending.slot !== slot) return;
+    if (pendingSwapTimerRef.current) {
+      clearTimeout(pendingSwapTimerRef.current);
+      pendingSwapTimerRef.current = null;
+    }
+    pendingTargetRef.current = null;
+    setActiveSlot(slot);
+  };
+
   // Lắng nghe postMessage từ sandbox preview iframe, xác thực chặt chẽ event.source, event.origin và channelToken
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      const iframeWindow = iframeRef.current?.contentWindow;
-      if (!iframeWindow || event.source !== iframeWindow) return;
+      const w0 = iframeRef0.current?.contentWindow;
+      const w1 = iframeRef1.current?.contentWindow;
+      if (!event.source || (event.source !== w0 && event.source !== w1)) return;
 
       // Iframe sandboxed không có allow-same-origin luôn có origin là chuỗi 'null'
       if (event.origin !== 'null' && event.origin !== window.location.origin) return;
@@ -477,14 +555,40 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
             </div>
           )}
 
-          <iframe
-            key={`preview-frame-${reloadKey}-${refreshTrigger}`}
-            ref={iframeRef}
-            srcDoc={compiledSrcDoc}
-            title="Trình xem trước kết quả HTML"
-            sandbox="allow-scripts allow-modals"
-            className="w-full h-full border-0 bg-white"
-          />
+          <div className="relative flex-1 w-full h-full overflow-hidden bg-white">
+            <iframe
+              key={`preview-slot-0-${slotEpochs[0]}`}
+              ref={iframeRef0}
+              srcDoc={slotDocs[0]}
+              onLoad={() => handleSlotLoad(0)}
+              title="Trình xem trước kết quả HTML"
+              aria-hidden={activeSlot !== 0}
+              tabIndex={activeSlot === 0 ? undefined : -1}
+              sandbox="allow-scripts allow-modals"
+              className={`w-full h-full border-0 bg-white ${
+                activeSlot === 0
+                  ? 'relative z-[1] opacity-100 pointer-events-auto'
+                  : 'absolute inset-0 z-0 opacity-0 pointer-events-none'
+              }`}
+            />
+            {slotDocs[1] !== '' && (
+              <iframe
+                key={`preview-slot-1-${slotEpochs[1]}`}
+                ref={iframeRef1}
+                srcDoc={slotDocs[1]}
+                onLoad={() => handleSlotLoad(1)}
+                title="Trình xem trước kết quả HTML (bộ đệm)"
+                aria-hidden={activeSlot !== 1}
+                tabIndex={activeSlot === 1 ? undefined : -1}
+                sandbox="allow-scripts allow-modals"
+                className={`w-full h-full border-0 bg-white ${
+                  activeSlot === 1
+                    ? 'relative z-[1] opacity-100 pointer-events-auto'
+                    : 'absolute inset-0 z-0 opacity-0 pointer-events-none'
+                }`}
+              />
+            )}
+          </div>
         </div>
       </div>
 

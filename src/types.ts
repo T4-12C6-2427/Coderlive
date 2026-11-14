@@ -84,6 +84,7 @@ export interface CollabProject {
   inviteToken: string;
   inviteRole: CollabInviteRole;
   inviteTokenUsed?: string;
+  singleEditorPerAccount?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -126,6 +127,8 @@ export interface PresenceSession {
   typingUntil: number;
   lastActive: number;
   role: CollabRole;
+  isLockHolder?: boolean;
+  lockClaimedAt?: number;
 }
 
 export interface PresenceUser {

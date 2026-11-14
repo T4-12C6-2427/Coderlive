@@ -11,6 +11,7 @@ import {
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Project } from '../types';
 import { migrateProjectCode } from '../lib/codeCompiler';
+import { formatPublicEmailOrUsername } from '../lib/usernameAuth';
 
 const GUEST_PROJECTS_KEY = 'coderlive_guest_projects_v1';
 
@@ -85,7 +86,7 @@ export async function getUserProjects(userId: string): Promise<Project[]> {
         jsCode: migrated.jsCode,
         isShared: !!data.isShared,
         sharedAt: data.sharedAt || undefined,
-        authorEmail: data.authorEmail || undefined,
+        authorEmail: formatPublicEmailOrUsername(data.authorEmail) || undefined,
         createdAt: data.createdAt || new Date().toISOString(),
         updatedAt: data.updatedAt || new Date().toISOString(),
       });
@@ -134,7 +135,7 @@ export async function getProject(userId: string, projectId: string): Promise<Pro
       jsCode: migrated.jsCode,
       isShared: !!data.isShared,
       sharedAt: data.sharedAt || undefined,
-      authorEmail: data.authorEmail || undefined,
+      authorEmail: formatPublicEmailOrUsername(data.authorEmail) || undefined,
       createdAt: data.createdAt || new Date().toISOString(),
       updatedAt: data.updatedAt || new Date().toISOString(),
     };
@@ -177,7 +178,7 @@ export async function getSharedProject(userId: string, projectId: string): Promi
       jsCode: migrated.jsCode,
       isShared: true,
       sharedAt: data.sharedAt || undefined,
-      authorEmail: data.authorEmail || undefined,
+      authorEmail: formatPublicEmailOrUsername(data.authorEmail) || undefined,
       createdAt: data.createdAt || new Date().toISOString(),
       updatedAt: data.updatedAt || new Date().toISOString(),
     };
@@ -217,7 +218,7 @@ export async function saveProject(
     cssCode: projectData.cssCode || '',
     jsCode: projectData.jsCode || '',
     isShared: !!projectData.isShared,
-    authorEmail: projectData.authorEmail,
+    authorEmail: formatPublicEmailOrUsername(projectData.authorEmail) || undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -301,6 +302,9 @@ export async function updateProject(
     }
     if (payload.description !== undefined) {
       payload.description = payload.description.trim();
+    }
+    if (payload.authorEmail !== undefined) {
+      payload.authorEmail = formatPublicEmailOrUsername(payload.authorEmail) || '';
     }
     // Clean any undefined properties
     const cleanPayload: Record<string, any> = {};

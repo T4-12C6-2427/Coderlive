@@ -1,8 +1,19 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
-import { getFirestore, Firestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  Firestore,
+  doc,
+  getDocFromServer,
+} from 'firebase/firestore';
 import { getDatabase, Database } from 'firebase/database';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { getPublicUserEmail } from './usernameAuth';
+
+export type FirestorePersistenceMode = 'persistent-multi-tab' | 'memory-fallback' | 'unavailable';
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
@@ -12,6 +23,8 @@ let rtdbUrl: string | null = null;
 let isFirebaseAvailable = false;
 let isFirebaseConfigValid = false;
 let firebaseConfigError: string | null = null;
+let firestorePersistenceMode: FirestorePersistenceMode = 'unavailable';
+let firestorePersistenceError: string | null = null;
 
 /**
  * Chuẩn hóa URL Firebase Realtime Database về đúng origin gốc (không chứa child path).
@@ -97,9 +110,32 @@ if (missingKeys.length > 0) {
 
     app = getApps().length === 0 ? initializeApp(sanitizedConfig) : getApp();
     auth = getAuth(app);
-    // Pass firestoreDatabaseId when provided for isolated databases
+    // Pass firestoreDatabaseId when provided for isolated databases, enabling multi-tab IndexedDB persistence
     const databaseId = (firebaseConfig as any).firestoreDatabaseId;
-    db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+    try {
+      const fsSettings = {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      };
+      db = databaseId
+        ? initializeFirestore(app, fsSettings, databaseId)
+        : initializeFirestore(app, fsSettings);
+      firestorePersistenceMode = 'persistent-multi-tab';
+      firestorePersistenceError = null;
+    } catch (persistenceErr: any) {
+      const msg = persistenceErr instanceof Error ? persistenceErr.message : String(persistenceErr);
+      db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+      if (msg.includes('already been started')) {
+        // Instance was already initialized in this JS context (e.g., module reload)
+        firestorePersistenceMode = 'persistent-multi-tab';
+        firestorePersistenceError = null;
+      } else {
+        firestorePersistenceMode = 'memory-fallback';
+        firestorePersistenceError = msg;
+        console.warn('[Firebase:Init] Không thể bật bộ nhớ đệm cục bộ đa tab cho Firestore, dùng bộ nhớ tạm:', msg);
+      }
+    }
 
     if (rtdbUrl) {
       try {
@@ -122,6 +158,7 @@ if (missingKeys.length > 0) {
 }
 
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export {
   app,
@@ -133,6 +170,8 @@ export {
   isFirebaseConfigValid,
   firebaseConfigError,
   firebaseConfig,
+  firestorePersistenceMode,
+  firestorePersistenceError,
 };
 
 // Validate connection to Firestore
@@ -183,13 +222,13 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth?.currentUser?.uid,
-      email: auth?.currentUser?.email,
+      email: getPublicUserEmail(auth?.currentUser?.email) || null,
       emailVerified: auth?.currentUser?.emailVerified,
       isAnonymous: auth?.currentUser?.isAnonymous,
       tenantId: auth?.currentUser?.tenantId,
       providerInfo: auth?.currentUser?.providerData?.map((provider) => ({
         providerId: provider.providerId,
-        email: provider.email,
+        email: getPublicUserEmail(provider.email) || null,
       })) || [],
     },
     operationType,

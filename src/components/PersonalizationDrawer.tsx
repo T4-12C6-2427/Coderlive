@@ -40,6 +40,7 @@ import {
 import { Switch, Slider } from './ui/Controls';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { getUserDiagnosticLabel } from '../lib/usernameAuth';
 import {
   THEME_PRESETS,
   ACCENT_SWATCHES,
@@ -2434,7 +2435,7 @@ export const PersonalizationDrawer: React.FC<PersonalizationDrawerProps> = ({
                     <span className="text-xs font-semibold text-primary block">Trạng thái đồng bộ đám mây</span>
                     <span className="text-[11px] text-muted">
                       {currentUser?.uid
-                        ? `Đã đăng nhập (${currentUser.email || 'Người dùng'}) • Cấu hình tự động lưu lên Firestore`
+                        ? `Đã đăng nhập (${getUserDiagnosticLabel(currentUser)}) • Cấu hình tự động lưu lên Firestore`
                         : 'Đang dùng chế độ Khách (Guest) • Đăng nhập để đồng bộ giao diện trên mọi thiết bị'}
                     </span>
                   </div>

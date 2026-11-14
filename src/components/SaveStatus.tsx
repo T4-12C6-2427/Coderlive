@@ -27,8 +27,8 @@ export const SaveStatus: React.FC<SaveStatusProps> = ({
       { label: string; tooltip: string; className: string; icon: React.ReactNode }
     > = {
       connecting: {
-        label: 'Đang kết nối...',
-        tooltip: 'Đang tải trạng thái đồng bộ thời gian thực...',
+        label: 'Đang tải dự án...',
+        tooltip: 'Đang tải bản chụp và đồng bộ thời gian thực...',
         className: 'bg-accent-soft text-accent border-[var(--accent-base)]/30',
         icon: <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />,
       },
@@ -45,7 +45,7 @@ export const SaveStatus: React.FC<SaveStatusProps> = ({
         icon: <Check className="w-3.5 h-3.5 flex-shrink-0" />,
       },
       offline: {
-        label: 'Ngoại tuyến',
+        label: 'Mất kết nối, đang thử lại',
         tooltip: 'Mất kết nối mạng — thay đổi đang được giữ an toàn và sẽ tự đồng bộ khi có mạng',
         className: 'bg-warning-soft text-warning border-[var(--color-warning)]/30',
         icon: <WifiOff className="w-3.5 h-3.5 flex-shrink-0" />,

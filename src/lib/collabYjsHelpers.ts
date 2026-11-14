@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { diffLines } from 'diff';
 
 /**
  * Chuyển đổi Uint8Array sang chuỗi Base64 an toàn cho trình duyệt và kích thước lớn
@@ -76,9 +77,82 @@ export function decodeCollabStateToCode(
   }
 }
 
+export interface TextPatch {
+  from: number;
+  to: number;
+  insert: string;
+}
+
 /**
- * Cập nhật toàn bộ nội dung một Y.Text bằng khác biệt tối thiểu (common prefix/suffix)
- * bên trong một transaction để giữ con trỏ của cộng tác viên ổn định nhất có thể.
+ * Tính danh sách các bản vá tối thiểu theo từng đoạn dòng thay đổi (kèm cắt tiền tố/hậu tố chung)
+ * để khi định dạng hoặc sửa nhanh cục bộ không làm dịch chuyển con trỏ của đồng đội ở các dòng khác.
+ */
+export function computeMinimalTextPatches(prevText: string, nextText: string): TextPatch[] {
+  if (prevText === nextText) return [];
+
+  const parts = diffLines(prevText, nextText);
+  const patches: TextPatch[] = [];
+  let prevOffset = 0;
+
+  let i = 0;
+  while (i < parts.length) {
+    const part = parts[i];
+    if (!part.added && !part.removed) {
+      prevOffset += part.value.length;
+      i++;
+      continue;
+    }
+
+    const hunkFrom = prevOffset;
+    let removedText = '';
+    let addedText = '';
+
+    while (i < parts.length && (parts[i].removed || parts[i].added)) {
+      if (parts[i].removed) {
+        removedText += parts[i].value;
+        prevOffset += parts[i].value.length;
+      } else if (parts[i].added) {
+        addedText += parts[i].value;
+      }
+      i++;
+    }
+
+    let pStart = 0;
+    const minLen = Math.min(removedText.length, addedText.length);
+    while (pStart < minLen && removedText.charCodeAt(pStart) === addedText.charCodeAt(pStart)) {
+      pStart++;
+    }
+
+    let rEnd = removedText.length;
+    let aEnd = addedText.length;
+    while (
+      rEnd > pStart &&
+      aEnd > pStart &&
+      removedText.charCodeAt(rEnd - 1) === addedText.charCodeAt(aEnd - 1)
+    ) {
+      rEnd--;
+      aEnd--;
+    }
+
+    const patchFrom = hunkFrom + pStart;
+    const patchTo = hunkFrom + rEnd;
+    const patchInsert = addedText.slice(pStart, aEnd);
+
+    if (patchFrom !== patchTo || patchInsert.length > 0) {
+      patches.push({
+        from: patchFrom,
+        to: patchTo,
+        insert: patchInsert,
+      });
+    }
+  }
+
+  return patches;
+}
+
+/**
+ * Cập nhật nội dung một Y.Text bằng các bản vá tối thiểu theo dòng bên trong 1 transaction
+ * để giữ con trỏ tương đối của cộng tác viên ở các dòng khác luôn ổn định và gộp thành 1 bước hoàn tác.
  */
 export function applyStringDiffToYText(
   yText: Y.Text,
@@ -88,32 +162,20 @@ export function applyStringDiffToYText(
   const prevText = yText.toString();
   if (prevText === nextText) return;
 
-  let start = 0;
-  const minLen = Math.min(prevText.length, nextText.length);
-  while (start < minLen && prevText.charCodeAt(start) === nextText.charCodeAt(start)) {
-    start++;
-  }
+  const patches = computeMinimalTextPatches(prevText, nextText);
+  if (patches.length === 0) return;
 
-  let prevEnd = prevText.length;
-  let nextEnd = nextText.length;
-  while (
-    prevEnd > start &&
-    nextEnd > start &&
-    prevText.charCodeAt(prevEnd - 1) === nextText.charCodeAt(nextEnd - 1)
-  ) {
-    prevEnd--;
-    nextEnd--;
-  }
-
-  const deleteCount = prevEnd - start;
-  const insertText = nextText.slice(start, nextEnd);
+  const sortedDesc = [...patches].sort((a, b) => b.from - a.from);
 
   const apply = () => {
-    if (deleteCount > 0) {
-      yText.delete(start, deleteCount);
-    }
-    if (insertText.length > 0) {
-      yText.insert(start, insertText);
+    for (const patch of sortedDesc) {
+      const deleteCount = patch.to - patch.from;
+      if (deleteCount > 0) {
+        yText.delete(patch.from, deleteCount);
+      }
+      if (patch.insert.length > 0) {
+        yText.insert(patch.from, patch.insert);
+      }
     }
   };
 
@@ -123,4 +185,5 @@ export function applyStringDiffToYText(
     apply();
   }
 }
+
 

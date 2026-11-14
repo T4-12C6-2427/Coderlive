@@ -8,6 +8,8 @@
         "userId": { "type": "string" },
         "email": { "type": "string" },
         "displayName": { "type": "string" },
+        "authType": { "type": "string", "enum": ["username", "email", "google"] },
+        "username": { "type": "string", "maxLength": 20 },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" },
         "lastLoginAt": { "type": "string" }
@@ -64,6 +66,7 @@
         "inviteToken": { "type": "string", "maxLength": 128 },
         "inviteRole": { "type": "string", "enum": ["editor", "viewer"] },
         "inviteTokenUsed": { "type": "string", "maxLength": 128 },
+        "singleEditorPerAccount": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
@@ -76,7 +79,9 @@
       "properties": {
         "updateBase64": { "type": "string" },
         "authorId": { "type": "string", "maxLength": 128 },
-        "createdAt": { "type": "string" }
+        "createdAt": { "type": "string" },
+        "clientId": { "type": "integer" },
+        "seq": { "type": "integer" }
       },
       "required": ["updateBase64", "authorId", "createdAt"]
     },
@@ -87,7 +92,9 @@
       "properties": {
         "stateBase64": { "type": "string" },
         "updatedBy": { "type": "string", "maxLength": 128 },
-        "updatedAt": { "type": "string" }
+        "updatedAt": { "type": "string" },
+        "clientId": { "type": "integer" },
+        "watermarkAt": { "type": "string" }
       },
       "required": ["stateBase64", "updatedBy", "updatedAt"]
     },

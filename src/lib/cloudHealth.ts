@@ -1,8 +1,20 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { ref, onValue } from 'firebase/database';
-import { auth, db, rtdb, rtdbUrl, normalizeRealtimeDatabaseUrl, firebaseConfig, isFirebaseConfigValid } from './firebase';
+import {
+  auth,
+  db,
+  rtdb,
+  rtdbUrl,
+  normalizeRealtimeDatabaseUrl,
+  firebaseConfig,
+  isFirebaseConfigValid,
+  firestorePersistenceMode,
+  firestorePersistenceError,
+} from './firebase';
+import { getActiveCollabSessionMetrics } from './CollabProvider';
 import { User } from 'firebase/auth';
+import { getUserDiagnosticLabel } from './usernameAuth';
 
 export interface CloudCheckItem {
   id: string;
@@ -149,9 +161,9 @@ export async function runCloudDiagnostic(currentUser: User | null): Promise<Clou
         });
         checks.push({
           id: 'email_password_provider',
-          name: 'Phương thức Đăng ký Email/Mật khẩu',
+          name: 'Phương thức Đăng ký Tên đăng nhập & Email/Mật khẩu',
           status: 'success',
-          details: 'Phương thức Email/Mật khẩu đã được bật (sẵn sàng đăng ký/đăng nhập).',
+          details: 'Phương thức Email/Mật khẩu đã được bật (sẵn sàng cho cả tài khoản Tên đăng nhập và Email).',
         });
       } else if (code === 'auth/network-request-failed') {
         checks.push({
@@ -355,6 +367,34 @@ export async function runCloudDiagnostic(currentUser: User | null): Promise<Clou
     }
   }
 
+  // 6. Kiểm tra bộ nhớ đệm ngoại tuyến Firestore đa tab & hiệu suất đồng bộ nhóm
+  if (firestorePersistenceMode === 'persistent-multi-tab') {
+    checks.push({
+      id: 'firestore_persistence',
+      name: 'Bộ nhớ đệm cục bộ Firestore (Đa tab IndexedDB)',
+      status: 'success',
+      details:
+        'Đã bật bộ nhớ đệm IndexedDB đa tab cho phép mở lại bản chụp tức thì và giữ hàng đợi ngoại tuyến.',
+    });
+  } else if (firestorePersistenceMode === 'memory-fallback') {
+    checks.push({
+      id: 'firestore_persistence',
+      name: 'Bộ nhớ đệm cục bộ Firestore (Chế độ dự phòng bộ nhớ)',
+      status: 'warning',
+      details: `Trình duyệt không hỗ trợ hoặc đang chặn IndexedDB (${firestorePersistenceError || 'chế độ ẩn danh'}). Hệ thống tự động dùng bộ nhớ tạm và localStorage dự phòng.`,
+    });
+  }
+
+  const collabMetrics = getActiveCollabSessionMetrics();
+  if (collabMetrics) {
+    checks.push({
+      id: 'collab_sync_metrics',
+      name: 'Thống kê đồng bộ phiên làm việc nhóm hiện tại',
+      status: collabMetrics.writesCount >= 250 ? 'warning' : 'success',
+      details: `Đọc: ${collabMetrics.readsCount} lượt (${Math.round(collabMetrics.bytesRead / 1024)} KB) • Ghi: ${collabMetrics.writesCount} lượt (${collabMetrics.chunkWritesCount} gói cập nhật, ${collabMetrics.snapshotWritesCount} bản chụp) • Nén gọn: ${collabMetrics.compactionsCount} lần.`,
+    });
+  }
+
   // Đánh giá tổng quan
   let overallStatus: 'healthy' | 'warning' | 'error' = 'healthy';
   if (checks.some((c) => c.status === 'error')) {
@@ -373,7 +413,7 @@ export async function runCloudDiagnostic(currentUser: User | null): Promise<Clou
     `Firebase Project ID: ${projectId}`,
     `Firestore Database ID: ${databaseId}`,
     `Realtime Database URL: ${configuredRtdbUrl || '(chưa cấu hình)'}`,
-    `Trạng thái người dùng: ${currentUser ? `Đã đăng nhập (${currentUser.email || currentUser.uid})` : 'Khách (Guest)'}`,
+    `Trạng thái người dùng: ${currentUser ? `Đã đăng nhập (${getUserDiagnosticLabel(currentUser)})` : 'Khách (Guest)'}`,
     `Đánh giá chung: ${overallStatus === 'healthy' ? '✓ TẤT CẢ HOẠT ĐỘNG TỐT' : overallStatus === 'warning' ? '⚠ CẦN LƯU Ý' : '✗ CÓ LỖI CẦN CẤU HÌNH'}`,
     '',
     'CHI TIẾT KIỂM TRA:',

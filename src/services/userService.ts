@@ -1,15 +1,35 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { User } from 'firebase/auth';
+import {
+  AuthAccountType,
+  getAccountIdentity,
+  isSyntheticUsernameEmail,
+  UserLikeForIdentity,
+} from '../lib/usernameAuth';
 
 export interface UserDocumentData {
   userId: string;
   email: string;
   displayName: string;
+  authType?: AuthAccountType;
+  username?: string;
   createdAt?: string;
   updatedAt: string;
   lastLoginAt: string;
 }
+
+export interface EnsureUserDocumentOptions {
+  authType?: AuthAccountType;
+  username?: string;
+}
+
+type EnsureUserInput =
+  | User
+  | (UserLikeForIdentity & {
+      uid: string;
+    })
+  | string;
 
 // In-memory set to prevent multiple duplicate background retry loops for the same uid
 const activeRetryUids = new Set<string>();
@@ -20,19 +40,26 @@ const activeRetryUids = new Set<string>();
  * để không ghi đè dữ liệu có sẵn (như themeSettings hay preferences).
  */
 export async function ensureUserDocument(
-  userOrUid: User | { uid: string; email?: string | null; displayName?: string | null } | string
+  userOrUid: EnsureUserInput,
+  options?: EnsureUserDocumentOptions
 ): Promise<void> {
   if (!db) {
     throw new Error('Firestore chưa được khởi tạo hoặc không khả dụng.');
   }
 
   const uid = typeof userOrUid === 'string' ? userOrUid : userOrUid.uid;
-  const email = typeof userOrUid !== 'string' && userOrUid.email ? userOrUid.email : '';
+  const identity = typeof userOrUid !== 'string' ? getAccountIdentity(userOrUid) : null;
+  const publicEmail = identity?.publicEmail || '';
+  const resolvedUsername = options?.username || identity?.username || undefined;
+  const inferredAuthType: AuthAccountType | undefined = options?.authType || identity?.primaryType;
+
   const displayName =
     typeof userOrUid !== 'string' && userOrUid.displayName
       ? userOrUid.displayName
-      : email
-      ? email.split('@')[0]
+      : resolvedUsername
+      ? resolvedUsername
+      : publicEmail
+      ? publicEmail.split('@')[0]
       : 'Lập trình viên';
 
   const userDocRef = doc(db, 'users', uid);
@@ -44,14 +71,16 @@ export async function ensureUserDocument(
       // Tài liệu chưa tồn tại -> tạo mới với các trường mặc định
       const newDoc: UserDocumentData = {
         userId: uid,
-        email: email || '',
+        email: publicEmail,
         displayName: displayName || 'Lập trình viên',
+        ...(inferredAuthType ? { authType: inferredAuthType } : {}),
+        ...(resolvedUsername ? { username: resolvedUsername } : {}),
         createdAt: now,
         updatedAt: now,
         lastLoginAt: now,
       };
       await setDoc(userDocRef, newDoc, { merge: true });
-      console.log(`[Firestore:profile] Đã tạo thành công tài liệu người dùng mới cho ${uid} (${email})`);
+      console.log(`[Firestore:profile] Đã tạo thành công tài liệu người dùng mới cho ${uid}`);
     } else {
       // Tài liệu đã có -> cập nhật lastLoginAt và updatedAt
       const updateData: Partial<UserDocumentData> = {
@@ -59,10 +88,24 @@ export async function ensureUserDocument(
         lastLoginAt: now,
         updatedAt: now,
       };
-      // Bổ sung email / displayName nếu tài liệu trước đó bị thiếu
+      // Bổ sung email công khai / displayName / authType / username nếu thiếu hoặc cần đồng bộ
       const existingData = snap.data();
-      if (!existingData.email && email) updateData.email = email;
-      if (!existingData.displayName && displayName) updateData.displayName = displayName;
+      if (!existingData.email && publicEmail) {
+        updateData.email = publicEmail;
+      } else if (typeof existingData.email === 'string' && isSyntheticUsernameEmail(existingData.email)) {
+        updateData.email = publicEmail;
+      }
+      if (!existingData.displayName && displayName) {
+        updateData.displayName = displayName;
+      }
+      if (!existingData.authType && inferredAuthType) {
+        updateData.authType = inferredAuthType;
+      } else if (options?.authType && existingData.authType !== 'username') {
+        updateData.authType = options.authType;
+      }
+      if (!existingData.username && resolvedUsername) {
+        updateData.username = resolvedUsername;
+      }
 
       await setDoc(userDocRef, updateData, { merge: true });
       console.log(`[Firestore:profile] Đã xác thực và cập nhật tài liệu người dùng cho ${uid}`);
@@ -78,9 +121,15 @@ export async function ensureUserDocument(
  * Giúp tự động hàn gắn tài khoản (self-healing) nếu quá trình lưu lên Firestore ban đầu gặp sự cố.
  */
 export function retryEnsureUserDocumentInBackground(
-  user: { uid: string; email?: string | null; displayName?: string | null },
+  user: {
+    uid: string;
+    email?: string | null;
+    displayName?: string | null;
+    providerData?: ReadonlyArray<{ providerId?: string | null }>;
+  },
   onSuccess?: () => void,
-  onFinalFailure?: (err: unknown) => void
+  onFinalFailure?: (err: unknown) => void,
+  options?: EnsureUserDocumentOptions
 ): void {
   const uid = user.uid;
   if (activeRetryUids.has(uid)) {
@@ -95,7 +144,7 @@ export function retryEnsureUserDocumentInBackground(
     attempt++;
     console.log(`[Firestore:profile] Đang thử lại đồng bộ dữ liệu người dùng lần ${attempt}/3 cho ${uid}...`);
     try {
-      await ensureUserDocument(user);
+      await ensureUserDocument(user, options);
       activeRetryUids.delete(uid);
       console.log(`[Firestore:profile] Tự động đồng bộ tài liệu người dùng thành công ở lần ${attempt}!`);
       if (onSuccess) onSuccess();

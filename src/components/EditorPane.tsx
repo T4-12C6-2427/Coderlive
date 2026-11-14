@@ -28,11 +28,185 @@ import {
 } from '../lib/cmPresenceExtension';
 import { getInitials } from '../lib/presenceIdentity';
 import { getContrastingText } from '../lib/themeEngine';
+import { collabPresenceStore, useCollabOnlineUsers } from '../lib/collabPresenceStore';
 import {
   LineCommentsPopover,
   ResolvedLineCommentItem,
 } from './collab/LineCommentsPopover';
 import { Dropdown, DropdownItem } from './ui/Dropdown';
+
+const PRESENCE_DISPATCH_THROTTLE_MS = 100;
+
+function countLinesFast(text: string): number {
+  if (!text) return 1;
+  let count = 1;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) count++;
+  }
+  return count;
+}
+
+const TabPresencePills: React.FC<{
+  tab: EditorTab;
+  currentUserId: string;
+  isCollabMode: boolean;
+}> = React.memo(({ tab, currentUserId, isCollabMode }) => {
+  const onlineUsers = useCollabOnlineUsers();
+  if (!isCollabMode || onlineUsers.length === 0) return null;
+
+  const usersInTab = onlineUsers.filter(
+    (u) => u.uid !== currentUserId && u.tab === tab
+  );
+  if (usersInTab.length === 0) return null;
+
+  const typingUsers = usersInTab.filter((u) => u.isTyping);
+  const visible = usersInTab.slice(0, 3);
+  const overflow = usersInTab.length - visible.length;
+  const summaryLabel = `${usersInTab.map((u) => u.name).join(', ')} đang ở tab ${tab.toUpperCase()}${
+    typingUsers.length > 0 ? ', đang gõ' : ''
+  }`;
+
+  return (
+    <span
+      aria-label={summaryLabel}
+      className="inline-flex items-center gap-1 ml-0.5 flex-shrink-0"
+    >
+      <span className="inline-flex items-center -space-x-1">
+        {visible.map((u) => (
+          <span
+            key={u.uid}
+            title={`${u.name}${u.isTyping ? ' (đang gõ...)' : ''}`}
+            className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ring-1 ring-[var(--bg-elevated)] overflow-hidden ${
+              u.isIdle ? 'opacity-60' : ''
+            }`}
+            style={{ backgroundColor: u.color, color: getContrastingText(u.color) }}
+          >
+            {u.photoURL ? (
+              <img
+                src={u.photoURL}
+                alt={u.name}
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              getInitials(u.name).slice(0, 1)
+            )}
+          </span>
+        ))}
+        {overflow > 0 && (
+          <span className="w-4 h-4 rounded-full bg-panel border border-default text-[8px] font-mono text-primary flex items-center justify-center">
+            +{overflow}
+          </span>
+        )}
+      </span>
+      {typingUsers.length > 0 && (
+        <span
+          className="text-[10px] font-normal text-accent italic whitespace-nowrap"
+          title={`${typingUsers.map((u) => u.name).join(', ')} đang gõ...`}
+        >
+          đang gõ...
+        </span>
+      )}
+    </span>
+  );
+});
+
+const FollowModeBanner: React.FC<{
+  isCollabMode: boolean;
+  followingUid?: string | null;
+  followingUserProp?: PresenceUser | null;
+  onStopFollowing?: () => void;
+}> = React.memo(({ isCollabMode, followingUid, followingUserProp, onStopFollowing }) => {
+  const onlineUsers = useCollabOnlineUsers();
+  if (!isCollabMode) return null;
+
+  const resolvedUser =
+    followingUserProp ??
+    (followingUid ? onlineUsers.find((u) => u.uid === followingUid) || null : null);
+  if (!resolvedUser) return null;
+
+  return (
+    <div className="px-3 py-1.5 bg-accent-soft border-b border-[var(--accent-base)]/30 flex items-center justify-between gap-2 text-xs text-primary flex-shrink-0">
+      <div className="flex items-center gap-2 min-w-0">
+        <span
+          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+          style={{ backgroundColor: resolvedUser.color }}
+        />
+        <Eye className="w-3.5 h-3.5 text-accent flex-shrink-0" strokeWidth={1.5} />
+        <span className="truncate">
+          Đang theo dõi <strong className="font-semibold">{resolvedUser.name}</strong> (Tab{' '}
+          {resolvedUser.tab.toUpperCase()})
+        </span>
+        <span className="hidden sm:inline text-[11px] text-muted truncate">
+          · Nhấp hoặc gõ vào trình soạn thảo để dừng
+        </span>
+      </div>
+      {onStopFollowing && (
+        <button
+          type="button"
+          onClick={onStopFollowing}
+          className="touch-target-h px-2 py-0.5 rounded-[var(--radius-xs)] bg-elevated border border-default hover:border-[var(--accent-base)] text-[11px] font-medium text-secondary hover:text-primary transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
+        >
+          Dừng theo dõi
+        </button>
+      )}
+    </div>
+  );
+});
+
+const EditorStatsDisplay: React.FC<{
+  variant: 'desktop' | 'mobile';
+  isCollabEditorReady: boolean;
+  yText: Y.Text | null;
+  fallbackCode: string;
+}> = React.memo(({ variant, isCollabEditorReady, yText, fallbackCode }) => {
+  const [collabStats, setCollabStats] = useState<{ lines: number; chars: number }>(() => {
+    if (!isCollabEditorReady || !yText) {
+      return { lines: countLinesFast(fallbackCode), chars: fallbackCode.length };
+    }
+    const text = yText.toString();
+    return { lines: countLinesFast(text), chars: text.length };
+  });
+
+  useEffect(() => {
+    if (!isCollabEditorReady || !yText) return;
+    const updateNow = () => {
+      const text = yText.toString();
+      setCollabStats({ lines: countLinesFast(text), chars: text.length });
+    };
+    updateNow();
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const observer = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        updateNow();
+      }, 180);
+    };
+    yText.observe(observer);
+    return () => {
+      yText.unobserve(observer);
+      if (timer) clearTimeout(timer);
+    };
+  }, [isCollabEditorReady, yText]);
+
+  const stats = isCollabEditorReady
+    ? collabStats
+    : { lines: countLinesFast(fallbackCode), chars: fallbackCode.length };
+
+  if (variant === 'mobile') {
+    return <span className="sm:hidden">• {stats.lines} dòng</span>;
+  }
+
+  return (
+    <div className="hidden sm:flex items-center gap-2 font-mono text-[11px] text-muted whitespace-nowrap">
+      <span>{stats.lines} dòng</span>
+      <span>•</span>
+      <span>{stats.chars} ký tự</span>
+    </div>
+  );
+});
 
 interface EditorPaneProps {
   activeTab: EditorTab;
@@ -62,6 +236,7 @@ interface EditorPaneProps {
   onlineUsers?: PresenceUser[];
   remoteSessions?: PresenceSession[];
   currentUserId?: string;
+  followingUid?: string | null;
   followingUser?: PresenceUser | null;
   onStopFollowing?: () => void;
   jumpTarget?: { uid: string; tab: EditorTab; nonce: number } | null;
@@ -112,15 +287,15 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   collabYDoc = null,
   collabSyncReady = false,
   collabUndoManagers = null,
-  onlineUsers = [],
-  remoteSessions = [],
+  remoteSessions: remoteSessionsProp,
   currentUserId = '',
+  followingUid = null,
   followingUser = null,
   onStopFollowing,
   jumpTarget = null,
   cursorJumpTarget = null,
   appliedHighlightTarget = null,
-  remoteInsertFlashes = [],
+  remoteInsertFlashes: remoteInsertFlashesProp,
   onLocalCursorChange,
   onLocalTyping,
   onLocalInteraction,
@@ -208,6 +383,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   onLocalInteractionRef.current = onLocalInteraction;
   const onCompositionChangeRef = useRef(onCompositionChange);
   onCompositionChangeRef.current = onCompositionChange;
+  const onFormatCodeRef = useRef(onFormatCode);
+  onFormatCodeRef.current = onFormatCode;
+  const isReadOnlyRef = useRef(isReadOnly);
+  isReadOnlyRef.current = isReadOnly;
 
   useEffect(() => {
     setCommentPopover(null);
@@ -383,6 +562,20 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     if (presenceExtension) {
       list.push(presenceExtension);
     }
+    list.push(
+      keymap.of([
+        {
+          key: 'Alt-Shift-f',
+          run: () => {
+            if (!isReadOnlyRef.current && onFormatCodeRef.current) {
+              onFormatCodeRef.current();
+              return true;
+            }
+            return false;
+          },
+        },
+      ])
+    );
     list.push(jumpHighlightExt.field);
     return list;
   }, [
@@ -408,129 +601,225 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     };
   }, [editorKey]);
 
-  // Đẩy dữ liệu hiện diện và bình luận vào CodeMirror qua StateEffect mà không làm remount editor
-  useEffect(() => {
-    const view = editorViewRef.current;
-    if (!view || !isCollabEditorReady) return;
-    try {
-      view.dispatch({
-        effects: updatePresenceStateEffect.of({
-          remoteSessions,
-          activeTab,
-          ydoc: collabYDoc,
-          ytext: activeCollabYText,
-          highlightInserts,
-          hideRemoteCursors,
-          lineComments,
-        }),
-      });
-    } catch {
-      // Bỏ qua nếu editor vừa unmount
-    }
-  }, [
-    isCollabEditorReady,
-    remoteSessions,
-    activeTab,
-    collabYDoc,
-    activeCollabYText,
-    highlightInserts,
-    hideRemoteCursors,
-    lineComments,
-  ]);
-
-  // Đẩy hiệu ứng sáng nhẹ khi thành viên khác vừa chèn văn bản (~1 giây)
-  useEffect(() => {
-    const view = editorViewRef.current;
-    if (!view || !isCollabEditorReady || !highlightInserts) return;
-    if (!remoteInsertFlashes || remoteInsertFlashes.length === 0) return;
-
-    const fresh = remoteInsertFlashes.filter(
-      (f) => f.tab === activeTab && !seenFlashIdsRef.current.has(f.id)
-    );
-    if (fresh.length === 0) return;
-
-    for (const f of fresh) {
-      seenFlashIdsRef.current.add(f.id);
-    }
-    if (seenFlashIdsRef.current.size > 120) {
-      const keep = Array.from(seenFlashIdsRef.current).slice(-60);
-      seenFlashIdsRef.current = new Set(keep);
-    }
-
-    try {
-      view.dispatch({
-        effects: addInsertFlashesEffect.of(fresh),
-      });
-    } catch {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      const currentView = editorViewRef.current;
-      if (!currentView) return;
+  // Hàm đẩy snapshot hiện diện mới nhất vào CodeMirror via StateEffect (không remount editor)
+  const dispatchPresenceSnapshot = useCallback(
+    (sessions: PresenceSession[]) => {
+      const view = editorViewRef.current;
+      if (!view || !isCollabEditorReady) return;
       try {
-        currentView.dispatch({
-          effects: pruneExpiredFlashesEffect.of(Date.now()),
+        view.dispatch({
+          effects: updatePresenceStateEffect.of({
+            remoteSessions: sessions,
+            activeTab,
+            ydoc: collabYDoc,
+            ytext: activeCollabYText,
+            highlightInserts,
+            hideRemoteCursors,
+            lineComments,
+          }),
         });
       } catch {
-        // Editor có thể đã unmount
+        // Bỏ qua nếu editor vừa unmount
       }
-    }, 1100);
+    },
+    [
+      isCollabEditorReady,
+      activeTab,
+      collabYDoc,
+      activeCollabYText,
+      highlightInserts,
+      hideRemoteCursors,
+      lineComments,
+    ]
+  );
 
-    return () => clearTimeout(timer);
-  }, [remoteInsertFlashes, activeTab, isCollabEditorReady, highlightInserts]);
-
-  // Chế độ Theo dõi (Follow mode) & Chuyển đến vị trí của thành viên
+  // Đẩy ngay khi đổi tab, comment hoặc cài đặt hiển thị
   useEffect(() => {
-    if (!followingUser) {
-      lastFollowedSigRef.current = null;
-    }
+    const sessions = remoteSessionsProp ?? collabPresenceStore.getRemoteSessions();
+    dispatchPresenceSnapshot(sessions);
+  }, [remoteSessionsProp, dispatchPresenceSnapshot]);
 
-    const view = editorViewRef.current;
-    if (!view || !isCollabEditorReady || !collabYDoc || !activeCollabYText) return;
+  // Đăng ký trực tiếp từ collabPresenceStore với tiết lưu ~10Hz để không re-render React khi con trỏ từ xa di chuyển
+  const followingUidRef = useRef<string | null>(followingUid || followingUser?.uid || null);
+  followingUidRef.current = followingUid || followingUser?.uid || null;
 
-    const resolveSessionPos = (uid: string, tab: EditorTab): number | null => {
-      const matching = remoteSessions
+  const scrollToSessionPosition = useCallback(
+    (sessions: PresenceSession[], uid: string, tab: EditorTab, fallbackZero = false) => {
+      const view = editorViewRef.current;
+      if (!view || !isCollabEditorReady || !collabYDoc || !activeCollabYText) return;
+
+      const matching = sessions
         .filter((s) => s.uid === uid && s.tab === tab && s.cursor?.head)
         .sort((a, b) => b.lastActive - a.lastActive);
       const sess = matching[0];
-      if (!sess?.cursor?.head) return null;
-      try {
-        const rel = Y.createRelativePositionFromJSON(sess.cursor.head);
-        const abs = Y.createAbsolutePositionFromRelativePosition(rel, collabYDoc);
-        if (!abs || abs.type !== activeCollabYText) return null;
-        return Math.max(0, Math.min(abs.index, view.state.doc.length));
-      } catch {
-        return null;
+      let pos: number | null = null;
+      if (sess?.cursor?.head) {
+        try {
+          const rel = Y.createRelativePositionFromJSON(sess.cursor.head);
+          const abs = Y.createAbsolutePositionFromRelativePosition(rel, collabYDoc);
+          if (abs && abs.type === activeCollabYText) {
+            pos = Math.max(0, Math.min(abs.index, view.state.doc.length));
+          }
+        } catch {
+          pos = null;
+        }
       }
-    };
+      if (pos === null) {
+        if (!fallbackZero) return;
+        pos = 0;
+      }
 
-    if (jumpTarget && jumpTarget.tab === activeTab && jumpTarget.nonce !== lastJumpNonceRef.current) {
-      lastJumpNonceRef.current = jumpTarget.nonce;
-      const pos = resolveSessionPos(jumpTarget.uid, activeTab) ?? 0;
+      const sig = `${uid}:${tab}:${pos}`;
+      if (!fallbackZero && lastFollowedSigRef.current === sig) return;
+      lastFollowedSigRef.current = sig;
       try {
         view.dispatch({
           effects: EditorView.scrollIntoView(pos, { y: 'center' }),
         });
       } catch {}
+    },
+    [isCollabEditorReady, collabYDoc, activeCollabYText]
+  );
+
+  useEffect(() => {
+    if (!isCollabEditorReady || remoteSessionsProp !== undefined) return;
+
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastDispatchedAt = 0;
+
+    const flushSessions = () => {
+      lastDispatchedAt = Date.now();
+      const sessions = collabPresenceStore.getRemoteSessions();
+      dispatchPresenceSnapshot(sessions);
+
+      const activeFollowUid = followingUidRef.current;
+      if (activeFollowUid) {
+        const users = collabPresenceStore.getOnlineUsers();
+        const followed = users.find((u) => u.uid === activeFollowUid);
+        if (followed && followed.tab === activeTab) {
+          scrollToSessionPosition(sessions, activeFollowUid, activeTab, false);
+        }
+      }
+    };
+
+    const unsub = collabPresenceStore.subscribeRemoteSessions(() => {
+      const elapsed = Date.now() - lastDispatchedAt;
+      if (elapsed >= PRESENCE_DISPATCH_THROTTLE_MS) {
+        if (throttleTimer) {
+          clearTimeout(throttleTimer);
+          throttleTimer = null;
+        }
+        flushSessions();
+      } else if (!throttleTimer) {
+        throttleTimer = setTimeout(() => {
+          throttleTimer = null;
+          flushSessions();
+        }, PRESENCE_DISPATCH_THROTTLE_MS - elapsed);
+      }
+    });
+
+    return () => {
+      unsub();
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+        throttleTimer = null;
+      }
+    };
+  }, [
+    isCollabEditorReady,
+    remoteSessionsProp,
+    activeTab,
+    dispatchPresenceSnapshot,
+    scrollToSessionPosition,
+  ]);
+
+  // Đăng ký hiệu ứng sáng nhẹ khi thành viên khác vừa chèn văn bản (~1 giây)
+  const applyRemoteInsertFlashes = useCallback(
+    (flashes: RemoteInsertFlash[]) => {
+      const view = editorViewRef.current;
+      if (!view || !isCollabEditorReady || !highlightInserts || flashes.length === 0) return;
+
+      const fresh = flashes.filter(
+        (f) => f.tab === activeTab && !seenFlashIdsRef.current.has(f.id)
+      );
+      if (fresh.length === 0) return;
+
+      for (const f of fresh) {
+        seenFlashIdsRef.current.add(f.id);
+      }
+      if (seenFlashIdsRef.current.size > 120) {
+        const keep = Array.from(seenFlashIdsRef.current).slice(-60);
+        seenFlashIdsRef.current = new Set(keep);
+      }
+
+      try {
+        view.dispatch({
+          effects: addInsertFlashesEffect.of(fresh),
+        });
+      } catch {
+        return;
+      }
+
+      setTimeout(() => {
+        const currentView = editorViewRef.current;
+        if (!currentView) return;
+        try {
+          currentView.dispatch({
+            effects: pruneExpiredFlashesEffect.of(Date.now()),
+          });
+        } catch {}
+      }, 1100);
+    },
+    [activeTab, isCollabEditorReady, highlightInserts]
+  );
+
+  useEffect(() => {
+    if (remoteInsertFlashesProp && remoteInsertFlashesProp.length > 0) {
+      applyRemoteInsertFlashes(remoteInsertFlashesProp);
+    }
+  }, [remoteInsertFlashesProp, applyRemoteInsertFlashes]);
+
+  useEffect(() => {
+    if (!isCollabEditorReady || !highlightInserts || remoteInsertFlashesProp !== undefined) return;
+    return collabPresenceStore.subscribeInsertFlashes(() => {
+      applyRemoteInsertFlashes(collabPresenceStore.getInsertFlashes());
+    });
+  }, [isCollabEditorReady, highlightInserts, remoteInsertFlashesProp, applyRemoteInsertFlashes]);
+
+  // Chế độ Theo dõi (Follow mode) & Chuyển đến vị trí của thành viên
+  useEffect(() => {
+    const activeFollowUid = followingUid || followingUser?.uid || null;
+    if (!activeFollowUid) {
+      lastFollowedSigRef.current = null;
+    }
+
+    if (!isCollabEditorReady) return;
+    const sessions = remoteSessionsProp ?? collabPresenceStore.getRemoteSessions();
+
+    if (jumpTarget && jumpTarget.tab === activeTab && jumpTarget.nonce !== lastJumpNonceRef.current) {
+      lastJumpNonceRef.current = jumpTarget.nonce;
+      scrollToSessionPosition(sessions, jumpTarget.uid, activeTab, true);
       return;
     }
 
-    if (followingUser && followingUser.tab === activeTab) {
-      const pos = resolveSessionPos(followingUser.uid, activeTab);
-      if (pos !== null) {
-        const sig = `${followingUser.uid}:${activeTab}:${pos}`;
-        if (lastFollowedSigRef.current !== sig) {
-          lastFollowedSigRef.current = sig;
-          try {
-            view.dispatch({
-              effects: EditorView.scrollIntoView(pos, { y: 'center' }),
-            });
-          } catch {}
-        }
+    if (activeFollowUid) {
+      const targetUser =
+        followingUser ??
+        collabPresenceStore.getOnlineUsers().find((u) => u.uid === activeFollowUid) ??
+        null;
+      if (targetUser && targetUser.tab === activeTab) {
+        scrollToSessionPosition(sessions, activeFollowUid, activeTab, false);
       }
     }
-  }, [followingUser, jumpTarget, remoteSessions, activeTab, isCollabEditorReady, collabYDoc, activeCollabYText]);
+  }, [
+    followingUid,
+    followingUser,
+    jumpTarget,
+    remoteSessionsProp,
+    activeTab,
+    isCollabEditorReady,
+    scrollToSessionPosition,
+  ]);
 
   const applyCursorJump = useCallback((view: EditorView, line: number, col?: number) => {
     try {
@@ -630,7 +919,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         try {
           view.dispatch({
             effects: updatePresenceStateEffect.of({
-              remoteSessions,
+              remoteSessions: remoteSessionsProp ?? collabPresenceStore.getRemoteSessions(),
               activeTab,
               ydoc: collabYDoc,
               ytext: activeCollabYText,
@@ -703,39 +992,19 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     }
   };
 
-  // Compute stats for current tab
-  const stats = useMemo(() => {
-    const lines = currentCode.split('\n').length;
-    const chars = currentCode.length;
-    return { lines, chars };
-  }, [currentCode]);
-
-  // Tính toán người dùng đang ở từng tab (HTML / CSS / JS)
-  const presenceByTab = useMemo(() => {
-    const map: Record<EditorTab, PresenceUser[]> = { html: [], css: [], js: [] };
-    if (!isCollabMode || !onlineUsers || onlineUsers.length === 0) return map;
-    for (const u of onlineUsers) {
-      if (u.uid === currentUserId) continue;
-      if (u.tab === 'html' || u.tab === 'css' || u.tab === 'js') {
-        map[u.tab].push(u);
-      }
-    }
-    return map;
-  }, [isCollabMode, onlineUsers, currentUserId]);
-
-  // Danh sách bình luận cho tab hiện tại, neo lại dòng theo Yjs RelativePosition
+  // Danh sách bình luận cho tab hiện tại, neo lại dòng theo Yjs RelativePosition (không phụ thuộc state code từng phím)
   const resolvedTabComments: ResolvedLineCommentItem[] = useMemo(() => {
     if (!isCollabMode || !lineComments || lineComments.length === 0) return [];
     const view = editorViewRef.current;
     const filtered = lineComments.filter((c) => c.tab === activeTab);
-    if (!view) {
+    if (!view || !commentPopover) {
       return filtered.map((c) => ({ comment: c, resolvedLine: c.lineNumber || 1 }));
     }
     return filtered.map((c) => ({
       comment: c,
       resolvedLine: resolveCommentLineNumber(c, view.state.doc, collabYDoc, activeCollabYText),
     }));
-  }, [isCollabMode, lineComments, activeTab, collabYDoc, activeCollabYText, htmlCode, cssCode, jsCode]);
+  }, [isCollabMode, lineComments, activeTab, collabYDoc, activeCollabYText, commentPopover]);
 
   const openCommentCount = useMemo(
     () => resolvedTabComments.filter((item) => !item.comment.resolved).length,
@@ -886,61 +1155,6 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     ];
   }, [activeTab]);
 
-  const renderTabPresence = (tab: EditorTab) => {
-    const usersInTab = presenceByTab[tab];
-    if (!usersInTab || usersInTab.length === 0) return null;
-    const typingUsers = usersInTab.filter((u) => u.isTyping);
-    const visible = usersInTab.slice(0, 3);
-    const overflow = usersInTab.length - visible.length;
-    const summaryLabel = `${usersInTab.map((u) => u.name).join(', ')} đang ở tab ${tab.toUpperCase()}${
-      typingUsers.length > 0 ? ', đang gõ' : ''
-    }`;
-
-    return (
-      <span
-        aria-label={summaryLabel}
-        className="inline-flex items-center gap-1 ml-0.5 flex-shrink-0"
-      >
-        <span className="inline-flex items-center -space-x-1">
-          {visible.map((u) => (
-            <span
-              key={u.uid}
-              title={`${u.name}${u.isTyping ? ' (đang gõ...)' : ''}`}
-              className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ring-1 ring-[var(--bg-elevated)] overflow-hidden ${
-                u.isIdle ? 'opacity-60' : ''
-              }`}
-              style={{ backgroundColor: u.color, color: getContrastingText(u.color) }}
-            >
-              {u.photoURL ? (
-                <img
-                  src={u.photoURL}
-                  alt={u.name}
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                getInitials(u.name).slice(0, 1)
-              )}
-            </span>
-          ))}
-          {overflow > 0 && (
-            <span className="w-4 h-4 rounded-full bg-panel border border-default text-[8px] font-mono text-primary flex items-center justify-center">
-              +{overflow}
-            </span>
-          )}
-        </span>
-        {typingUsers.length > 0 && (
-          <span
-            className="text-[10px] font-normal text-accent italic whitespace-nowrap"
-            title={`${typingUsers.map((u) => u.name).join(', ')} đang gõ...`}
-          >
-            đang gõ...
-          </span>
-        )}
-      </span>
-    );
-  };
-
   return (
     <div className="flex flex-col h-full w-full overflow-hidden select-none bg-transparent text-primary">
       {/* 3 Tabs Header */}
@@ -959,7 +1173,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
           >
             <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0" />
             <span>HTML</span>
-            {renderTabPresence('html')}
+            <TabPresencePills tab="html" currentUserId={currentUserId} isCollabMode={isCollabMode} />
           </button>
 
           {/* CSS Tab (if enabled) */}
@@ -980,7 +1194,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               >
                 <span className="w-2 h-2 rounded-full bg-[var(--accent-2)] flex-shrink-0" />
                 <span>CSS</span>
-                {renderTabPresence('css')}
+                <TabPresencePills tab="css" currentUserId={currentUserId} isCollabMode={isCollabMode} />
               </button>
               {onRemoveLanguage && allowTabCustomize && (
                 <button
@@ -1019,7 +1233,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               >
                 <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0" />
                 <span>JS</span>
-                {renderTabPresence('js')}
+                <TabPresencePills tab="js" currentUserId={currentUserId} isCollabMode={isCollabMode} />
               </button>
               {onRemoveLanguage && allowTabCustomize && (
                 <button
@@ -1133,42 +1347,22 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             </button>
           )}
 
-          <div className="hidden sm:flex items-center gap-2 font-mono text-[11px] text-muted whitespace-nowrap">
-            <span>{stats.lines} dòng</span>
-            <span>•</span>
-            <span>{stats.chars} ký tự</span>
-          </div>
+          <EditorStatsDisplay
+            variant="desktop"
+            isCollabEditorReady={isCollabEditorReady}
+            yText={activeCollabYText}
+            fallbackCode={currentCode}
+          />
         </div>
       </div>
 
       {/* Follow Mode Banner */}
-      {isCollabMode && followingUser && (
-        <div className="px-3 py-1.5 bg-accent-soft border-b border-[var(--accent-base)]/30 flex items-center justify-between gap-2 text-xs text-primary flex-shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-              style={{ backgroundColor: followingUser.color }}
-            />
-            <Eye className="w-3.5 h-3.5 text-accent flex-shrink-0" strokeWidth={1.5} />
-            <span className="truncate">
-              Đang theo dõi <strong className="font-semibold">{followingUser.name}</strong> (Tab{' '}
-              {followingUser.tab.toUpperCase()})
-            </span>
-            <span className="hidden sm:inline text-[11px] text-muted truncate">
-              · Nhấp hoặc gõ vào trình soạn thảo để dừng
-            </span>
-          </div>
-          {onStopFollowing && (
-            <button
-              type="button"
-              onClick={onStopFollowing}
-              className="touch-target-h px-2 py-0.5 rounded-[var(--radius-xs)] bg-elevated border border-default hover:border-[var(--accent-base)] text-[11px] font-medium text-secondary hover:text-primary transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              Dừng theo dõi
-            </button>
-          )}
-        </div>
-      )}
+      <FollowModeBanner
+        isCollabMode={isCollabMode}
+        followingUid={followingUid}
+        followingUserProp={followingUser}
+        onStopFollowing={onStopFollowing}
+      />
 
       {/* CodeMirror Editor Area */}
       <div
@@ -1177,9 +1371,37 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         }`}
       >
         {isCollabMode && !isCollabEditorReady ? (
-          <div className="h-full w-full flex flex-col items-center justify-center gap-2 bg-panel text-secondary text-xs">
-            <Loader2 className="w-5 h-5 animate-spin text-accent" />
-            <span>Đang đồng bộ mã nguồn dự án nhóm...</span>
+          <div
+            role="status"
+            aria-live="polite"
+            className="h-full w-full flex flex-col bg-panel p-4 gap-3 overflow-hidden"
+          >
+            <div className="flex items-center gap-2 text-secondary text-xs font-medium pb-2 border-b border-subtle">
+              <Loader2 className="w-4 h-4 animate-spin text-accent flex-shrink-0" />
+              <span>Đang tải dự án...</span>
+            </div>
+            <div className="flex-1 flex gap-3 overflow-hidden animate-pulse">
+              <div className="w-8 flex flex-col gap-2.5 pt-0.5 flex-shrink-0">
+                <div className="h-3 w-5 rounded bg-elevated" />
+                <div className="h-3 w-4 rounded bg-elevated" />
+                <div className="h-3 w-5 rounded bg-elevated" />
+                <div className="h-3 w-4 rounded bg-elevated" />
+                <div className="h-3 w-6 rounded bg-elevated" />
+                <div className="h-3 w-4 rounded bg-elevated" />
+                <div className="h-3 w-5 rounded bg-elevated" />
+                <div className="h-3 w-4 rounded bg-elevated" />
+              </div>
+              <div className="flex-1 flex flex-col gap-2.5 pt-0.5">
+                <div className="h-3 w-3/5 rounded bg-elevated" />
+                <div className="h-3 w-2/5 rounded bg-elevated" />
+                <div className="h-3 w-4/5 rounded bg-elevated" />
+                <div className="h-3 w-1/2 rounded bg-elevated" />
+                <div className="h-3 w-3/4 rounded bg-elevated" />
+                <div className="h-3 w-1/3 rounded bg-elevated" />
+                <div className="h-3 w-2/3 rounded bg-elevated" />
+                <div className="h-3 w-2/5 rounded bg-elevated" />
+              </div>
+            </div>
           </div>
         ) : (
           <CodeMirror
@@ -1285,7 +1507,12 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
           <span className="hidden sm:inline">Thụt lề: 2 spaces</span>
           <span>•</span>
           <span>{settings.editorFontSize}px</span>
-          <span className="sm:hidden">• {stats.lines} dòng</span>
+          <EditorStatsDisplay
+            variant="mobile"
+            isCollabEditorReady={isCollabEditorReady}
+            yText={activeCollabYText}
+            fallbackCode={currentCode}
+          />
           {isCollabMode && (
             <>
               <span className="hidden sm:inline">•</span>

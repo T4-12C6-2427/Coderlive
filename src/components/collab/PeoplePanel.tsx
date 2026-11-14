@@ -26,6 +26,7 @@ import {
 } from '../../lib/presenceIdentity';
 import { getContrastingText } from '../../lib/themeEngine';
 import { useIsMobile } from '../../hooks/useViewport';
+import { getPublicUserEmail } from '../../lib/usernameAuth';
 
 interface PeoplePanelProps {
   isOpen: boolean;
@@ -110,7 +111,7 @@ export const PeoplePanel: React.FC<PeoplePanelProps> = ({
         uid,
         role: role as CollabRole,
         name: profile?.name || 'Thành viên',
-        email: profile?.email || '',
+        email: getPublicUserEmail(profile?.email) || '',
         photoURL: profile?.photoURL || null,
         color: getUserPresenceColor(project.id, uid),
       };
