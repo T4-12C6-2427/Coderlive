@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { sendEmailVerification } from 'firebase/auth';
 import {
   X,
   User as UserIcon,
@@ -17,9 +18,22 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Lock,
+  Send,
 } from 'lucide-react';
 import { getVietnameseAuthErrorMessage, useAuth } from '../contexts/AuthContext';
-import { evaluatePasswordStrength, getAccountIdentity } from '../lib/usernameAuth';
+import {
+  evaluatePasswordStrength,
+  getAccountIdentity,
+  getVerifiedPublicEmail,
+} from '../lib/usernameAuth';
+import {
+  DEFAULT_USER_PRIVACY_SETTINGS,
+  getUserPrivacySettings,
+  updateUserPrivacySettings,
+} from '../services/userService';
+import { UserPrivacySettings } from '../types';
+import { Switch } from './ui/Controls';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -58,7 +72,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordFeedback, setPasswordFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const isBusy = isSavingName || isLinkingGoogle || isChangingPassword;
+  // Privacy & Collab invite discovery states
+  const [privacySettings, setPrivacySettings] = useState<UserPrivacySettings>(
+    DEFAULT_USER_PRIVACY_SETTINGS
+  );
+  const [isLoadingPrivacy, setIsLoadingPrivacy] = useState(false);
+  const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
+  const [privacyFeedback, setPrivacyFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [isSendingVerificationEmail, setIsSendingVerificationEmail] = useState(false);
+
+  const isBusy = isSavingName || isLinkingGoogle || isChangingPassword || isSavingPrivacy;
 
   useEffect(() => {
     if (isOpen && currentUser) {
@@ -76,6 +102,22 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
       setShowNewPassword(false);
       setShowConfirmNewPassword(false);
       setPasswordFeedback(null);
+      setPrivacyFeedback(null);
+
+      let cancelled = false;
+      setIsLoadingPrivacy(true);
+      getUserPrivacySettings(currentUser.uid)
+        .then((loaded) => {
+          if (!cancelled) {
+            setPrivacySettings(loaded);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setIsLoadingPrivacy(false);
+        });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [isOpen, currentUser]);
 
@@ -97,6 +139,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   if (!isOpen || !currentUser) return null;
 
   const identity = getAccountIdentity(currentUser);
+  const verifiedPublicEmail = getVerifiedPublicEmail(currentUser);
   const showPhoto = Boolean(currentUser.photoURL) && !avatarLoadError;
   const initialChar = identity.displayLabel.charAt(0).toUpperCase();
   const passwordStrength = evaluatePasswordStrength(newPassword);
@@ -221,6 +264,51 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
       });
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const handlePrivacyToggle = async (patch: Partial<UserPrivacySettings>) => {
+    if (!currentUser || isBusy || isLoadingPrivacy) return;
+    const prev = privacySettings;
+    const next: UserPrivacySettings = { ...prev, ...patch };
+    setPrivacySettings(next);
+    setPrivacyFeedback(null);
+    setIsSavingPrivacy(true);
+    try {
+      const saved = await updateUserPrivacySettings(currentUser, next);
+      setPrivacySettings(saved);
+      setPrivacyFeedback({
+        type: 'success',
+        message: 'Đã lưu cài đặt quyền riêng tư.',
+      });
+    } catch (err: any) {
+      setPrivacySettings(prev);
+      setPrivacyFeedback({
+        type: 'error',
+        message: err?.message || 'Không thể lưu cài đặt quyền riêng tư. Vui lòng thử lại.',
+      });
+    } finally {
+      setIsSavingPrivacy(false);
+    }
+  };
+
+  const handleSendVerificationEmail = async () => {
+    if (!currentUser || isSendingVerificationEmail) return;
+    setPrivacyFeedback(null);
+    setIsSendingVerificationEmail(true);
+    try {
+      await sendEmailVerification(currentUser);
+      setPrivacyFeedback({
+        type: 'success',
+        message: 'Đã gửi email xác minh. Sau khi bấm vào liên kết trong hộp thư, hãy tải lại trang để kích hoạt.',
+      });
+    } catch (err: any) {
+      setPrivacyFeedback({
+        type: 'error',
+        message: getVietnameseAuthErrorMessage(err),
+      });
+    } finally {
+      setIsSendingVerificationEmail(false);
     }
   };
 
@@ -623,6 +711,118 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
               )}
             </div>
           )}
+
+          {/* Privacy & Collab Invite Settings Section */}
+          <div className="p-3.5 rounded-[var(--radius-md)] bg-panel border border-subtle space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Lock className="w-4 h-4 text-accent flex-shrink-0" />
+                <span className="font-semibold text-primary">Quyền riêng tư &amp; Lời mời dự án</span>
+              </div>
+              {(isLoadingPrivacy || isSavingPrivacy) && (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-accent flex-shrink-0" />
+              )}
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-xs font-medium text-primary">
+                    Cho phép người khác tìm thấy tôi khi mời vào dự án
+                  </p>
+                  <p className="text-[11px] text-muted leading-snug">
+                    Hiển thị tên hiển thị{identity.username ? ` và @${identity.username}` : ''} trong kết quả tìm kiếm mời thành viên.
+                  </p>
+                </div>
+                <Switch
+                  size="sm"
+                  ariaLabel="Cho phép người khác tìm thấy tôi khi mời vào dự án"
+                  checked={privacySettings.allowProfileSearch}
+                  disabled={isBusy || isLoadingPrivacy}
+                  onChange={(checked) => handlePrivacyToggle({ allowProfileSearch: checked })}
+                />
+              </div>
+
+              <div className="pt-2 border-t border-subtle flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-xs font-medium text-primary">
+                    Cho phép tìm qua email đã xác minh
+                  </p>
+                  {verifiedPublicEmail ? (
+                    <p className="text-[11px] text-muted leading-snug">
+                      Chỉ khớp khi người mời nhập chính xác địa chỉ <span className="font-mono text-secondary">{verifiedPublicEmail}</span>. Không bao giờ công khai danh sách email.
+                    </p>
+                  ) : identity.publicEmail ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] text-muted leading-snug">
+                        Email <span className="font-mono text-secondary">{identity.publicEmail}</span> chưa được xác minh nên tính năng này đang tắt.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={isSendingVerificationEmail || isBusy}
+                        onClick={handleSendVerificationEmail}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-accent hover:underline cursor-pointer disabled:opacity-50"
+                      >
+                        {isSendingVerificationEmail ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Send className="w-3 h-3" />
+                        )}
+                        <span>Gửi email xác minh</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted leading-snug">
+                      Chỉ khả dụng khi bạn liên kết tài khoản Google hoặc đăng ký bằng email đã xác minh.
+                    </p>
+                  )}
+                </div>
+                <Switch
+                  size="sm"
+                  ariaLabel="Cho phép tìm qua email đã xác minh"
+                  checked={Boolean(verifiedPublicEmail && privacySettings.allowEmailSearch)}
+                  disabled={!verifiedPublicEmail || isBusy || isLoadingPrivacy}
+                  onChange={(checked) => handlePrivacyToggle({ allowEmailSearch: checked })}
+                />
+              </div>
+
+              <div className="pt-2 border-t border-subtle flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-xs font-medium text-primary">
+                    Cho phép nhận lời mời tham gia dự án nhóm
+                  </p>
+                  <p className="text-[11px] text-muted leading-snug">
+                    Mọi lời mời luôn chờ bạn bấm Chấp nhận hoặc Từ chối trước khi tham gia.
+                  </p>
+                </div>
+                <Switch
+                  size="sm"
+                  ariaLabel="Cho phép nhận lời mời tham gia dự án nhóm"
+                  checked={privacySettings.acceptDirectInvites}
+                  disabled={isBusy || isLoadingPrivacy}
+                  onChange={(checked) => handlePrivacyToggle({ acceptDirectInvites: checked })}
+                />
+              </div>
+            </div>
+
+            {privacyFeedback && (
+              <div
+                role="status"
+                className={`p-2 rounded-[var(--radius-sm)] border text-[11px] flex items-start gap-2 ${
+                  privacyFeedback.type === 'success'
+                    ? 'bg-[var(--color-success-soft,var(--accent-soft))] border-[var(--color-success)]/30 text-primary'
+                    : 'bg-danger-soft border-danger/30 text-danger'
+                }`}
+              >
+                {privacyFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-3.5 h-3.5 text-danger flex-shrink-0 mt-0.5" />
+                )}
+                <span className="leading-relaxed">{privacyFeedback.message}</span>
+              </div>
+            )}
+          </div>
 
           {/* Creation Date */}
           <div>

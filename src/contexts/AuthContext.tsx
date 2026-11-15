@@ -460,7 +460,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch {
       // Ignore reload failure
     }
-    setCurrentUser(cloneAuthUser(auth.currentUser || updated));
+    const finalUser = auth.currentUser || updated;
+    setCurrentUser(cloneAuthUser(finalUser));
+    ensureUserDocument(finalUser).catch((err) => {
+      console.warn('[Firestore:profile] Lỗi đồng bộ hồ sơ sau khi hủy liên kết Google:', err);
+    });
   };
 
   const changeUserPassword = async (currentPassword: string, newPassword: string): Promise<void> => {
@@ -500,11 +504,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     try {
       await updateProfile(auth.currentUser, { displayName });
-      // Cập nhật lên Firestore
+      // Cập nhật lên Firestore & publicProfiles
       ensureUserDocument({
         uid: auth.currentUser.uid,
         displayName,
         email: auth.currentUser.email,
+        emailVerified: auth.currentUser.emailVerified,
+        photoURL: auth.currentUser.photoURL,
         providerData: auth.currentUser.providerData,
       }).catch((err) => {
         console.warn('[Firestore:profile] Lỗi cập nhật tên trên Firestore:', err);

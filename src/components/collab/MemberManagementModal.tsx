@@ -1,25 +1,22 @@
 import React, { useState } from 'react';
 import {
   Users,
-  Crown,
-  Trash2,
   UserPlus,
   LogOut,
-  ArrowRightLeft,
-  Loader2,
   ShieldCheck,
 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { CollabInviteRole, CollabProject } from '../../types';
-import { extractUsernameFromSyntheticEmail, getPublicUserEmail } from '../../lib/usernameAuth';
+import { CollabInviteRole, CollabProject, DEFAULT_COLLAB_MEMBER_LIMIT } from '../../types';
+import { CollabMemberList } from './CollabMemberList';
 
 interface MemberManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
   project: CollabProject | null;
   currentUserId: string;
+  currentUserEmail?: string | null;
   onChangeRole: (targetUid: string, role: CollabInviteRole) => Promise<void>;
   onRemoveMember: (targetUid: string) => Promise<void>;
   onTransferOwnership: (newOwnerUid: string) => Promise<void>;
@@ -33,6 +30,7 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
   onClose,
   project,
   currentUserId,
+  currentUserEmail = null,
   onChangeRole,
   onRemoveMember,
   onTransferOwnership,
@@ -40,67 +38,20 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
   onOpenInvite,
   onToggleSingleEditor,
 }) => {
-  const [busyUid, setBusyUid] = useState<string | null>(null);
+  const [busyLeave, setBusyLeave] = useState(false);
   const [isTogglingLockSetting, setIsTogglingLockSetting] = useState(false);
-  const [confirmRemoveUid, setConfirmRemoveUid] = useState<string | null>(null);
-  const [confirmTransferUid, setConfirmTransferUid] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!project) return null;
 
   const isOwner = project.ownerId === currentUserId;
-  const memberEntries = Object.entries(project.members).sort(([uidA, roleA], [uidB, roleB]) => {
-    if (roleA === 'owner') return -1;
-    if (roleB === 'owner') return 1;
-    if (uidA === currentUserId) return -1;
-    if (uidB === currentUserId) return 1;
-    const nameA = project.memberProfiles[uidA]?.name || '';
-    const nameB = project.memberProfiles[uidB]?.name || '';
-    return nameA.localeCompare(nameB, 'vi');
-  });
-
-  const handleRoleChange = async (uid: string, role: CollabInviteRole) => {
-    setError(null);
-    setBusyUid(uid);
-    try {
-      await onChangeRole(uid, role);
-    } catch {
-      setError('Không thể cập nhật vai trò thành viên.');
-    } finally {
-      setBusyUid(null);
-    }
-  };
-
-  const handleRemove = async (uid: string) => {
-    setError(null);
-    setBusyUid(uid);
-    try {
-      await onRemoveMember(uid);
-      setConfirmRemoveUid(null);
-    } catch {
-      setError('Không thể xóa thành viên khỏi dự án.');
-    } finally {
-      setBusyUid(null);
-    }
-  };
-
-  const handleTransfer = async (uid: string) => {
-    setError(null);
-    setBusyUid(uid);
-    try {
-      await onTransferOwnership(uid);
-      setConfirmTransferUid(null);
-    } catch {
-      setError('Không thể chuyển quyền sở hữu.');
-    } finally {
-      setBusyUid(null);
-    }
-  };
+  const memberCount = Object.keys(project.members).length;
+  const memberLimit = project.memberLimit ?? DEFAULT_COLLAB_MEMBER_LIMIT;
 
   const handleLeave = async () => {
     setError(null);
-    setBusyUid(currentUserId);
+    setBusyLeave(true);
     try {
       await onLeaveProject();
       setConfirmLeave(false);
@@ -108,14 +59,8 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
     } catch {
       setError('Không thể rời khỏi dự án lúc này.');
     } finally {
-      setBusyUid(null);
+      setBusyLeave(false);
     }
-  };
-
-  const getRoleLabel = (role: string) => {
-    if (role === 'owner') return 'Chủ sở hữu';
-    if (role === 'editor') return 'Biên tập viên';
-    return 'Người xem';
   };
 
   return (
@@ -127,8 +72,8 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
         <div className="flex items-center gap-2">
           <Users className="w-4 h-4 text-accent" strokeWidth={1.5} />
           <span>Thành viên dự án nhóm</span>
-          <Badge variant="accent" size="sm">
-            {memberEntries.length}
+          <Badge variant={memberCount >= memberLimit ? 'warning' : 'accent'} size="sm">
+            <span className="tabular-nums">{memberCount}/{memberLimit}</span>
           </Badge>
         </div>
       }
@@ -209,176 +154,17 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
           </div>
         )}
 
-        <div className="space-y-2 max-h-72 overflow-y-auto overscroll-contain pr-1">
-          {memberEntries.map(([uid, role]) => {
-            const profile = project.memberProfiles[uid];
-            const displayName = profile?.name || 'Thành viên';
-            const publicEmail = getPublicUserEmail(profile?.email);
-            const legacyUsername = extractUsernameFromSyntheticEmail(profile?.email);
-            const email = publicEmail || (legacyUsername && legacyUsername !== displayName ? `@${legacyUsername}` : '');
-            const photoURL = profile?.photoURL;
-            const isSelf = uid === currentUserId;
-            const isTargetOwner = role === 'owner';
-            const isBusy = busyUid === uid;
-
-            return (
-              <div
-                key={uid}
-                className="p-3 rounded-[var(--radius-md)] bg-panel border border-default space-y-2"
-              >
-                <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    {photoURL ? (
-                      <img
-                        src={photoURL}
-                        alt={displayName}
-                        className="w-8 h-8 rounded-full object-cover border border-default flex-shrink-0"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-accent-soft text-accent border border-[var(--accent-base)]/30 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                        {displayName.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-primary truncate">
-                          {displayName}
-                        </span>
-                        {isSelf && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-elevated border border-subtle text-muted flex-shrink-0">
-                            Bạn
-                          </span>
-                        )}
-                        {isTargetOwner && (
-                          <Crown className="w-3.5 h-3.5 text-warning flex-shrink-0" strokeWidth={1.5} />
-                        )}
-                      </div>
-                      {email && (
-                        <p className="text-[11px] text-muted truncate">{email}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Role / Owner controls */}
-                  <div className="flex items-center touch-gap gap-1.5 flex-shrink-0">
-                    {isOwner && !isTargetOwner ? (
-                      <>
-                        <select
-                          aria-label={`Vai trò của ${displayName}`}
-                          value={role === 'viewer' ? 'viewer' : 'editor'}
-                          disabled={isBusy}
-                          onChange={(e) =>
-                            handleRoleChange(uid, e.target.value as CollabInviteRole)
-                          }
-                          className="touch-target-h h-7 px-2 text-xs bg-elevated border border-default rounded-[var(--radius-xs)] text-primary outline-none focus:border-[var(--accent-base)] cursor-pointer disabled:opacity-50"
-                        >
-                          <option value="editor">Biên tập viên</option>
-                          <option value="viewer">Người xem</option>
-                        </select>
-
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => {
-                            setConfirmRemoveUid(null);
-                            setConfirmTransferUid(confirmTransferUid === uid ? null : uid);
-                          }}
-                          aria-label="Chuyển quyền sở hữu"
-                          className="touch-target p-1.5 rounded-[var(--radius-xs)] text-muted hover:text-warning hover:bg-warning-soft transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center"
-                        >
-                          <ArrowRightLeft className="w-3.5 h-3.5" strokeWidth={1.5} />
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => {
-                            setConfirmTransferUid(null);
-                            setConfirmRemoveUid(confirmRemoveUid === uid ? null : uid);
-                          }}
-                          aria-label="Xóa khỏi dự án"
-                          className="touch-target p-1.5 rounded-[var(--radius-xs)] text-muted hover:text-danger hover:bg-danger-soft transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center"
-                        >
-                          {isBusy ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.5} />
-                          )}
-                        </button>
-                      </>
-                    ) : (
-                      <Badge
-                        variant={
-                          isTargetOwner
-                            ? 'warning'
-                            : role === 'editor'
-                            ? 'accent'
-                            : 'default'
-                        }
-                        size="sm"
-                      >
-                        {getRoleLabel(role)}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                {/* Xác nhận xóa thành viên */}
-                {confirmRemoveUid === uid && (
-                  <div className="p-2.5 rounded-[var(--radius-sm)] bg-danger-soft border border-[var(--color-danger)]/30 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                    <span className="text-danger font-medium min-w-0">
-                      Xóa {displayName} khỏi dự án? Họ sẽ mất quyền truy cập ngay.
-                    </span>
-                    <div className="flex items-center touch-gap gap-1.5 flex-shrink-0 ml-auto">
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleRemove(uid)}
-                        className="touch-target-h px-3 py-1 rounded-[var(--radius-xs)] bg-[var(--color-danger)] text-white font-semibold cursor-pointer disabled:opacity-50"
-                      >
-                        Xóa
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmRemoveUid(null)}
-                        className="touch-target-h px-3 py-1 rounded-[var(--radius-xs)] bg-elevated text-secondary hover:text-primary cursor-pointer"
-                      >
-                        Hủy
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Xác nhận chuyển quyền sở hữu */}
-                {confirmTransferUid === uid && (
-                  <div className="p-2.5 rounded-[var(--radius-sm)] bg-warning-soft border border-[var(--color-warning)]/30 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                    <span className="text-warning font-medium min-w-0">
-                      Chuyển quyền chủ sở hữu cho {displayName}? Bạn sẽ trở thành Biên tập viên.
-                    </span>
-                    <div className="flex items-center touch-gap gap-1.5 flex-shrink-0 ml-auto">
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleTransfer(uid)}
-                        className="touch-target-h px-3 py-1 rounded-[var(--radius-xs)] bg-[var(--color-warning)] text-accent-on font-semibold cursor-pointer disabled:opacity-50"
-                      >
-                        Chuyển quyền
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmTransferUid(null)}
-                        className="touch-target-h px-3 py-1 rounded-[var(--radius-xs)] bg-elevated text-secondary hover:text-primary cursor-pointer"
-                      >
-                        Hủy
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
+          <CollabMemberList
+            project={project}
+            currentUserId={currentUserId}
+            currentUserEmail={currentUserEmail}
+            onChangeRole={onChangeRole}
+            onRemoveMember={onRemoveMember}
+            onTransferOwnership={onTransferOwnership}
+            allowOwnershipTransfer
+            onError={setError}
+          />
         </div>
 
         {/* Footer: Rời dự án cho thành viên không phải chủ sở hữu */}
@@ -391,7 +177,7 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
                   type="button"
                   size="sm"
                   variant="danger"
-                  disabled={busyUid === currentUserId}
+                  disabled={busyLeave}
                   onClick={handleLeave}
                 >
                   Rời ngay

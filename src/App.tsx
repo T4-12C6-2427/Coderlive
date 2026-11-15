@@ -28,11 +28,15 @@ import { LearnPage } from './components/learn/LearnPage';
 import { ActivityBar } from './components/ActivityBar';
 import { CommandPalette } from './components/CommandPalette';
 import { TemplatesDrawer } from './components/TemplatesDrawer';
+import { TemplatePreviewModal } from './components/TemplatePreviewModal';
+import { TemplateApplyConflictModal } from './components/TemplateApplyConflictModal';
 import { PersonalizationDrawer } from './components/PersonalizationDrawer';
 import { FpsMeter } from './components/FpsMeter';
 import { CloudDiagnosticModal } from './components/CloudDiagnosticModal';
 import { InviteMemberModal } from './components/collab/InviteMemberModal';
 import { MemberManagementModal } from './components/collab/MemberManagementModal';
+import { JoinByCodeModal, PendingJoinWaitState } from './components/collab/JoinByCodeModal';
+import { UserInvitesModal } from './components/collab/UserInvitesModal';
 import { CollabChatStrip } from './components/collab/CollabChatStrip';
 import { BackgroundLayer } from './components/background/BackgroundLayer';
 import { useTheme } from './contexts/ThemeContext';
@@ -64,6 +68,11 @@ import {
   WorkspacePreset,
   CollabProject,
   CollabInviteRole,
+  CollabJoinRequest,
+  CollabBlockedUser,
+  CollabDirectInvite,
+  UserInviteInboxItem,
+  UserSearchResult,
   CollabSyncState,
   PresenceSession,
   PresenceUser,
@@ -71,7 +80,10 @@ import {
   CollabLineComment,
   CollabChatMessage,
   CollabPreviewSyncState,
+  TemplatePrefs,
+  TemplateRelatedLesson,
 } from './types';
+import { CourseId } from './types/learning';
 import {
   collabPresenceStore,
   useCollabEditLock,
@@ -88,7 +100,7 @@ import {
   removeRecentProject,
 } from './lib/draftsAndRecents';
 import { useAuth } from './contexts/AuthContext';
-import { formatPublicEmailOrUsername } from './lib/usernameAuth';
+import { formatPublicEmailOrUsername, getAccountIdentity } from './lib/usernameAuth';
 import {
   getUserProjects,
   getGuestProjects,
@@ -106,6 +118,7 @@ import {
   subscribeCollabProject,
   updateCollabProjectMeta,
   updateCollabInviteSettings,
+  updateCollabJoinCodeSettings,
   joinCollabProjectByInvite,
   changeCollabMemberRole,
   removeCollabMember,
@@ -116,7 +129,20 @@ import {
   savePendingCollabInvite,
   getPendingCollabInvite,
   clearPendingCollabInvite,
+  subscribePendingJoinRequests,
+  subscribeBlockedCollabUsers,
+  subscribeProjectSentInvites,
+  subscribeUserInviteInbox,
+  sendDirectCollabInvite,
+  revokeDirectCollabInvite,
+  acceptUserCollabInvite,
+  declineUserCollabInvite,
+  approveJoinRequest,
+  rejectJoinRequest,
+  blockAndRejectJoinRequest,
+  unblockCollabUser,
 } from './services/collabProjectService';
+import { searchUsersForInvite } from './services/userService';
 import {
   subscribeCollabComments,
   addCollabLineComment,
@@ -140,6 +166,14 @@ import { getPresenceDisplayName, getUserPresenceColor } from './lib/presenceIden
 import { testConnection, isFirebaseConfigValid, firebaseConfigError, rtdb } from './lib/firebase';
 import { combineCode, compilePreviewDocument, migrateProjectCode } from './lib/codeCompiler';
 import { runStaticChecks } from './lib/staticLinter';
+import {
+  loadLocalTemplatePrefs,
+  loadCloudTemplatePrefs,
+  saveCloudTemplatePrefs,
+  toggleFavoriteTemplateId,
+  recordRecentTemplateId,
+} from './services/templatePrefsService';
+import { scheduleDevTemplateAuditOnce } from './lib/devTemplateAudit';
 
 const STORAGE_KEYS = {
   TABS_CODE: 'coderlive_code_tabs_v2',
@@ -266,6 +300,27 @@ export default function App() {
   const [recentProjects, setRecentProjects] = useState<RecentProjectRef[]>([]);
   const [isSavingScratchToNewProject, setIsSavingScratchToNewProject] = useState<boolean>(false);
   const [pendingTemplate, setPendingTemplate] = useState<CodeTemplate | null>(null);
+  const [previewingTemplate, setPreviewingTemplate] = useState<CodeTemplate | null>(null);
+  const [templatePrefs, setTemplatePrefs] = useState<TemplatePrefs>(() =>
+    loadLocalTemplatePrefs(null)
+  );
+  const [learningTarget, setLearningTarget] = useState<{
+    courseId: CourseId;
+    slug: string;
+    nonce: number;
+  } | null>(null);
+  const templateReplaceUndoRef = useRef<{
+    htmlCode: string;
+    cssCode: string;
+    jsCode: string;
+    activeLanguages: LanguageId[];
+    runHiddenTabs: RunHiddenTabs;
+    activeTab: EditorTab;
+    projectTitle: string;
+    activeTemplateId?: string;
+    isCollab: boolean;
+    collabProjectId: string | null;
+  } | null>(null);
   const hasCapturedGuestDraftRef = useRef<boolean>(false);
 
   // Collaborative Team Modals & Flows
@@ -273,6 +328,16 @@ export default function App() {
   const [editingCollabProject, setEditingCollabProject] = useState<CollabProject | null>(null);
   const [inviteModalProjectId, setInviteModalProjectId] = useState<string | null>(null);
   const [membersModalProjectId, setMembersModalProjectId] = useState<string | null>(null);
+  const [isJoinByCodeModalOpen, setIsJoinByCodeModalOpen] = useState<boolean>(false);
+  const pendingOpenJoinByCodeRef = useRef<boolean>(false);
+  const [isUserInvitesModalOpen, setIsUserInvitesModalOpen] = useState<boolean>(false);
+  const [pendingJoinWaitState, setPendingJoinWaitState] = useState<PendingJoinWaitState | null>(null);
+  const [pendingJoinRequestsByProject, setPendingJoinRequestsByProject] = useState<
+    Record<string, CollabJoinRequest[]>
+  >({});
+  const [projectSentInvites, setProjectSentInvites] = useState<CollabDirectInvite[]>([]);
+  const [userInviteInbox, setUserInviteInbox] = useState<UserInviteInboxItem[]>([]);
+  const [blockedCollabUsers, setBlockedCollabUsers] = useState<CollabBlockedUser[]>([]);
   const [pendingRemovePersonalAfterConvert, setPendingRemovePersonalAfterConvert] = useState<Project | null>(null);
   const [collabProviderInstance, setCollabProviderInstance] = useState<CollabProvider | null>(null);
   const collabProviderRef = useRef<CollabProvider | null>(null);
@@ -547,10 +612,38 @@ export default function App() {
     return { html: htmlCode, css: cssCode, js: jsCode };
   }, [activeCollabProject, isSharedView, htmlCode, cssCode, jsCode]);
 
-  // Test Firebase connection on boot
+  // Test Firebase connection on boot & run dev-time template audit
   useEffect(() => {
     testConnection();
+    if (import.meta.env.DEV) {
+      scheduleDevTemplateAuditOnce();
+    }
   }, []);
+
+  // Load & sync template preferences (favorites + recent 4)
+  useEffect(() => {
+    if (authLoading) return;
+    const uid = currentUser?.uid;
+    if (!uid) {
+      setTemplatePrefs(loadLocalTemplatePrefs(null));
+      return;
+    }
+    let cancelled = false;
+    setTemplatePrefs(loadLocalTemplatePrefs(uid));
+    loadCloudTemplatePrefs(uid).then((merged) => {
+      if (!cancelled) {
+        setTemplatePrefs(merged);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, currentUser?.uid]);
+
+  // Clear one-step template replace snapshot whenever active project switches
+  useEffect(() => {
+    templateReplaceUndoRef.current = null;
+  }, [activeProject?.id, activeCollabProject?.id, isSharedView]);
 
   // Save layout preference
   useEffect(() => {
@@ -611,6 +704,189 @@ export default function App() {
       (activeCollabProject?.id === membersModalProjectId ? activeCollabProject : null)
     );
   }, [collabProjects, membersModalProjectId, activeCollabProject]);
+
+  // Lắng nghe yêu cầu tham gia theo thời gian thực cho các dự án nhóm mà người dùng là chủ sở hữu
+  const ownedCollabProjectIdsKey = useMemo(() => {
+    if (!currentUser || isSharedView) return '';
+    const ids = new Set<string>();
+    for (const p of collabProjects) {
+      if (p.ownerId === currentUser.uid) ids.add(p.id);
+    }
+    if (activeCollabProject && activeCollabProject.ownerId === currentUser.uid) {
+      ids.add(activeCollabProject.id);
+    }
+    if (resolvedInviteModalProject && resolvedInviteModalProject.ownerId === currentUser.uid) {
+      ids.add(resolvedInviteModalProject.id);
+    }
+    return Array.from(ids).sort().join(',');
+  }, [
+    currentUser?.uid,
+    isSharedView,
+    collabProjects,
+    activeCollabProject?.id,
+    activeCollabProject?.ownerId,
+    resolvedInviteModalProject?.id,
+    resolvedInviteModalProject?.ownerId,
+  ]);
+
+  const seenRequestKeysRef = useRef<Record<string, Set<string>>>({});
+  const initializedRequestProjectsRef = useRef<Set<string>>(new Set());
+  const inviteModalProjectIdRef = useRef<string | null>(null);
+  inviteModalProjectIdRef.current = inviteModalProjectId;
+
+  useEffect(() => {
+    if (!ownedCollabProjectIdsKey) {
+      setPendingJoinRequestsByProject({});
+      seenRequestKeysRef.current = {};
+      initializedRequestProjectsRef.current = new Set();
+      return;
+    }
+
+    const projectIds = ownedCollabProjectIdsKey.split(',').filter(Boolean);
+    const activeSet = new Set(projectIds);
+
+    // Dọn dẹp cache cho dự án không còn sở hữu
+    setPendingJoinRequestsByProject((prev) => {
+      const next: Record<string, CollabJoinRequest[]> = {};
+      for (const id of projectIds) {
+        if (prev[id]) next[id] = prev[id];
+      }
+      return next;
+    });
+
+    for (const cachedId of Object.keys(seenRequestKeysRef.current)) {
+      if (!activeSet.has(cachedId)) {
+        delete seenRequestKeysRef.current[cachedId];
+        initializedRequestProjectsRef.current.delete(cachedId);
+      }
+    }
+
+    const unsubs = projectIds.map((projId) =>
+      subscribePendingJoinRequests(projId, (requests) => {
+        setPendingJoinRequestsByProject((prev) => ({
+          ...prev,
+          [projId]: requests,
+        }));
+
+        if (!initializedRequestProjectsRef.current.has(projId)) {
+          initializedRequestProjectsRef.current.add(projId);
+          seenRequestKeysRef.current[projId] = new Set(requests.map((r) => r.requesterUid));
+          return;
+        }
+
+        const prevSeen = seenRequestKeysRef.current[projId] || new Set<string>();
+        const newlyArrived = requests.filter((r) => !prevSeen.has(r.requesterUid));
+        seenRequestKeysRef.current[projId] = new Set(requests.map((r) => r.requesterUid));
+
+        if (newlyArrived.length > 0 && inviteModalProjectIdRef.current !== projId) {
+          showToast(
+            newlyArrived.length === 1
+              ? `${newlyArrived[0].requesterName} đang xin tham gia dự án "${newlyArrived[0].projectTitle}"`
+              : `Có ${newlyArrived.length} yêu cầu tham gia dự án mới`,
+            'info'
+          );
+        }
+      })
+    );
+
+    return () => {
+      unsubs.forEach((u) => u());
+    };
+  }, [ownedCollabProjectIdsKey, showToast]);
+
+  const pendingJoinRequestCountsByProject = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const [projId, list] of Object.entries(pendingJoinRequestsByProject)) {
+      if (list.length > 0) counts[projId] = list.length;
+    }
+    return counts;
+  }, [pendingJoinRequestsByProject]);
+
+  const totalOwnerPendingRequestsCount = useMemo(
+    () =>
+      Object.values(pendingJoinRequestsByProject).reduce(
+        (sum, list) => sum + list.length,
+        0
+      ),
+    [pendingJoinRequestsByProject]
+  );
+
+  const activeOwnerPendingRequestsCount =
+    isCollabOwner && activeCollabProject
+      ? (pendingJoinRequestsByProject[activeCollabProject.id]?.length || 0)
+      : 0;
+
+  const inviteModalPendingRequests = resolvedInviteModalProject
+    ? pendingJoinRequestsByProject[resolvedInviteModalProject.id] || []
+    : [];
+
+  useEffect(() => {
+    if (
+      !resolvedInviteModalProject ||
+      !currentUser ||
+      resolvedInviteModalProject.ownerId !== currentUser.uid
+    ) {
+      setBlockedCollabUsers([]);
+      setProjectSentInvites([]);
+      return;
+    }
+    const unsubBlocked = subscribeBlockedCollabUsers(resolvedInviteModalProject.id, (list) => {
+      setBlockedCollabUsers(list);
+    });
+    const unsubSent = subscribeProjectSentInvites(resolvedInviteModalProject.id, (list) => {
+      setProjectSentInvites(list);
+    });
+    return () => {
+      unsubBlocked();
+      unsubSent();
+    };
+  }, [resolvedInviteModalProject?.id, currentUser?.uid]);
+
+  const seenInboxInviteKeysRef = useRef<Set<string>>(new Set());
+  const inboxInitializedForUidRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!currentUser || isSharedView) {
+      setUserInviteInbox([]);
+      seenInboxInviteKeysRef.current = new Set();
+      inboxInitializedForUidRef.current = null;
+      return;
+    }
+
+    const uid = currentUser.uid;
+    inboxInitializedForUidRef.current = null;
+    seenInboxInviteKeysRef.current = new Set();
+
+    const unsub = subscribeUserInviteInbox(uid, (invites) => {
+      setUserInviteInbox(invites);
+      if (inboxInitializedForUidRef.current !== uid) {
+        inboxInitializedForUidRef.current = uid;
+        seenInboxInviteKeysRef.current = new Set(invites.map((i) => i.projectId));
+        return;
+      }
+
+      const newlyArrived = invites.filter((i) => !seenInboxInviteKeysRef.current.has(i.projectId));
+      seenInboxInviteKeysRef.current = new Set(invites.map((i) => i.projectId));
+      if (newlyArrived.length > 0 && !isUserInvitesModalOpen) {
+        showToast(
+          newlyArrived.length === 1
+            ? `Bạn nhận được lời mời tham gia "${newlyArrived[0].projectTitle}"`
+            : `Bạn nhận được ${newlyArrived.length} lời mời tham gia dự án mới`,
+          'info'
+        );
+      }
+    });
+
+    return () => unsub();
+  }, [currentUser?.uid, isSharedView]);
+
+  const handleSearchUsersForInvite = useCallback(
+    async (queryText: string): Promise<UserSearchResult[]> => {
+      if (!currentUser) return [];
+      return searchUsersForInvite(queryText, currentUser.uid);
+    },
+    [currentUser?.uid]
+  );
 
   // Check URL parameters for Shared Project OR Collab Invite on mount
   useEffect(() => {
@@ -1115,7 +1391,23 @@ export default function App() {
   );
 
   const handleLocalTyping = useCallback((tab: EditorTab) => {
+    templateReplaceUndoRef.current = null;
     presenceManagerRef.current?.notifyTyping(tab);
+  }, []);
+
+  const handleEditorHtmlChange = useCallback((val: string) => {
+    templateReplaceUndoRef.current = null;
+    setHtmlCode(val);
+  }, []);
+
+  const handleEditorCssChange = useCallback((val: string) => {
+    templateReplaceUndoRef.current = null;
+    setCssCode(val);
+  }, []);
+
+  const handleEditorJsChange = useCallback((val: string) => {
+    templateReplaceUndoRef.current = null;
+    setJsCode(val);
   }, []);
 
   const handleLocalEditorInteraction = useCallback(() => {
@@ -1537,6 +1829,11 @@ export default function App() {
     if (currentUid && !prevUid) {
       if (pendingInvite) {
         loadUserProjectsAndLastActive(currentUid);
+      } else if (pendingOpenJoinByCodeRef.current) {
+        pendingOpenJoinByCodeRef.current = false;
+        loadUserProjectsAndLastActive(currentUid);
+        setPendingJoinWaitState(null);
+        setIsJoinByCodeModalOpen(true);
       } else {
         const hasGuestWork = Boolean(htmlCode.trim() || cssCode.trim() || jsCode.trim());
         if (hasGuestWork) {
@@ -1569,9 +1866,20 @@ export default function App() {
     window.history.replaceState({}, '', window.location.pathname);
 
     joinCollabProjectByInvite(pending.projectId, pending.token, currentUser)
-      .then(async (joined) => {
-        await handleSelectCollabProject(joined);
-        showToast(`Đã tham gia dự án nhóm "${joined.title}"`);
+      .then(async (result) => {
+        if (result.status === 'joined' || result.status === 'already_member') {
+          await handleSelectCollabProject(result.project);
+          showToast(`Đã mở dự án nhóm "${result.project.title}"`);
+        } else {
+          setPendingJoinWaitState({
+            projectId: result.projectId,
+            projectTitle: result.projectTitle,
+            requestedRole: result.requestedRole,
+            source: result.source,
+          });
+          setIsJoinByCodeModalOpen(true);
+          showToast('Đã gửi yêu cầu. Đang chờ chủ dự án chấp nhận.', 'info');
+        }
       })
       .catch((err: any) => {
         console.error('Lỗi tham gia dự án nhóm:', err);
@@ -1658,7 +1966,8 @@ export default function App() {
           await updateCollabProjectMeta(
             activeCollabProject.id,
             { title: projectTitle },
-            activeCollabProject.inviteToken
+            activeCollabProject.inviteToken,
+            activeCollabProject.joinCode
           );
         }
         setCloudSaveStatus('saved');
@@ -1990,7 +2299,8 @@ export default function App() {
             languages: formData.languages,
             singleEditorPerAccount: formData.singleEditorPerAccount,
           },
-          targetCollab.inviteToken
+          targetCollab.inviteToken,
+          targetCollab.joinCode
         );
         if (activeCollabProject && activeCollabProject.id === targetCollab.id) {
           setProjectTitle(formData.title);
@@ -2227,7 +2537,12 @@ export default function App() {
       return;
     }
     try {
-      await updateCollabProjectMeta(projectId, { title: newTitle }, target.inviteToken);
+      await updateCollabProjectMeta(
+        projectId,
+        { title: newTitle },
+        target.inviteToken,
+        target.joinCode
+      );
       if (activeCollabProject?.id === projectId) {
         setProjectTitle(newTitle);
       }
@@ -2486,44 +2801,296 @@ export default function App() {
     setLayout((prev) => (prev === 'horizontal' ? 'vertical' : 'horizontal'));
   }, []);
 
+  const handleToggleFavoriteTemplate = useCallback(
+    (templateId: string) => {
+      setTemplatePrefs((prev) => {
+        const next = toggleFavoriteTemplateId(prev, templateId);
+        void saveCloudTemplatePrefs(next, currentUser?.uid);
+        return next;
+      });
+    },
+    [currentUser?.uid]
+  );
+
+  const markTemplateUsed = useCallback(
+    (templateId: string) => {
+      setTemplatePrefs((prev) => {
+        const next = recordRecentTemplateId(prev, templateId);
+        void saveCloudTemplatePrefs(next, currentUser?.uid);
+        return next;
+      });
+    },
+    [currentUser?.uid]
+  );
+
+  const handleUndoTemplateReplace = useCallback((): boolean => {
+    const snap = templateReplaceUndoRef.current;
+    if (!snap || isEditorReadOnly) return false;
+    if (snap.isCollab && snap.collabProjectId !== (activeCollabProject?.id || null)) {
+      templateReplaceUndoRef.current = null;
+      return false;
+    }
+
+    templateReplaceUndoRef.current = null;
+
+    setActiveLanguages(snap.activeLanguages);
+    setRunHiddenTabs(snap.runHiddenTabs);
+    setActiveTab(snap.activeTab);
+    setActiveTemplateId(snap.activeTemplateId);
+    saveTabViewSettings(currentTabViewKey, {
+      languages: snap.activeLanguages,
+      runHiddenTabs: snap.runHiddenTabs,
+    });
+    if (!snap.isCollab || isCollabOwner) {
+      setProjectTitle(snap.projectTitle);
+    }
+
+    if (snap.isCollab && activeCollabProject && collabProviderInstance) {
+      const undone = collabProviderInstance.undoTabs(['html', 'css', 'js']);
+      if (!undone) {
+        collabProviderInstance.setAllCode({
+          htmlCode: snap.htmlCode,
+          cssCode: snap.cssCode,
+          jsCode: snap.jsCode,
+        });
+      }
+      const eff = getEffectivePreviewCodes(
+        { html: snap.htmlCode, css: snap.cssCode, js: snap.jsCode },
+        snap.activeLanguages,
+        snap.runHiddenTabs
+      );
+      updatePreviewSnapshot(eff.html, eff.css, eff.js, true);
+    } else {
+      setHtmlCode(snap.htmlCode);
+      setCssCode(snap.cssCode);
+      setJsCode(snap.jsCode);
+      const eff = getEffectivePreviewCodes(
+        { html: snap.htmlCode, css: snap.cssCode, js: snap.jsCode },
+        snap.activeLanguages,
+        snap.runHiddenTabs
+      );
+      updatePreviewSnapshot(eff.html, eff.css, eff.js, true);
+    }
+
+    setRefreshTrigger((prev) => prev + 1);
+    showToast('Đã hoàn tác thay thế mẫu', 'info');
+    return true;
+  }, [
+    isEditorReadOnly,
+    activeCollabProject,
+    collabProviderInstance,
+    currentTabViewKey,
+    isCollabOwner,
+    updatePreviewSnapshot,
+    showToast,
+  ]);
+
   const applyTemplateImmediately = useCallback(
-    (template: CodeTemplate) => {
+    (template: CodeTemplate, captureUndo = false) => {
+      if (captureUndo) {
+        const live = getLiveCodes();
+        templateReplaceUndoRef.current = {
+          htmlCode: live.html,
+          cssCode: live.css,
+          jsCode: live.js,
+          activeLanguages: [...activeLanguages],
+          runHiddenTabs: { ...runHiddenTabs },
+          activeTab,
+          projectTitle,
+          activeTemplateId,
+          isCollab: Boolean(activeCollabProject && !isSharedView),
+          collabProjectId: activeCollabProject?.id || null,
+        };
+      } else {
+        templateReplaceUndoRef.current = null;
+      }
+
+      const nextHtml = template.htmlCode;
+      const nextCss = template.cssCode || '';
+      const nextJs = template.jsCode || '';
+
+      // Khôi phục các tab bị ẩn nếu mẫu có sử dụng CSS/JS
+      const requiredLangs: LanguageId[] = ['html'];
+      if (nextCss.trim()) requiredLangs.push('css');
+      if (nextJs.trim()) requiredLangs.push('js');
+      const nextLanguages = normalizeLanguages([...activeLanguages, ...requiredLangs]);
+      const nextRunHidden: RunHiddenTabs = {
+        css: requiredLangs.includes('css') ? true : runHiddenTabs.css,
+        js: requiredLangs.includes('js') ? true : runHiddenTabs.js,
+      };
+
+      setActiveLanguages(nextLanguages);
+      setRunHiddenTabs(nextRunHidden);
+      saveTabViewSettings(currentTabViewKey, {
+        languages: nextLanguages,
+        runHiddenTabs: nextRunHidden,
+      });
+      if (!nextLanguages.includes(activeTab)) {
+        setActiveTab('html');
+      }
+
       if (activeCollabProject && collabProviderInstance) {
         collabProviderInstance.setAllCode({
-          htmlCode: template.htmlCode,
-          cssCode: template.cssCode || '',
-          jsCode: template.jsCode || '',
+          htmlCode: nextHtml,
+          cssCode: nextCss,
+          jsCode: nextJs,
         });
       } else {
-        setHtmlCode(template.htmlCode);
-        setCssCode(template.cssCode || '');
-        setJsCode(template.jsCode || '');
+        setHtmlCode(nextHtml);
+        setCssCode(nextCss);
+        setJsCode(nextJs);
       }
+
       setActiveTemplateId(template.id);
       setConsoleMessages([]);
+      const eff = getEffectivePreviewCodes(
+        { html: nextHtml, css: nextCss, js: nextJs },
+        nextLanguages,
+        nextRunHidden
+      );
+      updatePreviewSnapshot(eff.html, eff.css, eff.js, true);
       setRefreshTrigger((prev) => prev + 1);
       if (!activeCollabProject || isCollabOwner) {
         setProjectTitle(template.name);
       }
       setHasUnsavedChanges(true);
+      markTemplateUsed(template.id);
+
+      if (captureUndo) {
+        showToast(`Đã áp dụng mẫu '${template.name}'`, 'success', {
+          durationMs: 6000,
+          actionLabel: 'Hoàn tác',
+          onAction: () => {
+            handleUndoTemplateReplace();
+          },
+        });
+      } else {
+        showToast(`Đã áp dụng mẫu '${template.name}'`, 'success');
+      }
     },
-    [activeCollabProject, collabProviderInstance, isCollabOwner]
+    [
+      getLiveCodes,
+      activeLanguages,
+      runHiddenTabs,
+      activeTab,
+      projectTitle,
+      activeTemplateId,
+      activeCollabProject,
+      isSharedView,
+      currentTabViewKey,
+      collabProviderInstance,
+      isCollabOwner,
+      updatePreviewSnapshot,
+      markTemplateUsed,
+      showToast,
+      handleUndoTemplateReplace,
+    ]
+  );
+
+  const handleCreateNewProjectFromTemplate = useCallback(
+    async (template: CodeTemplate) => {
+      const targetUserId = currentUser?.uid || 'guest';
+
+      // Tự động lưu dự án cá nhân hiện tại nếu có thay đổi chưa lưu để không mất bài làm
+      if (hasUnsavedChanges && activeProject && !activeCollabProject && !isSharedView) {
+        try {
+          await updateProject(targetUserId, activeProject.id, {
+            title: projectTitle,
+            htmlCode,
+            cssCode,
+            jsCode,
+            languages: activeLanguages,
+          });
+        } catch (err) {
+          console.error('Lỗi tự động lưu trước khi tạo dự án từ mẫu:', err);
+        }
+      }
+
+      const templateLangs = normalizeLanguages([
+        'html',
+        ...(template.cssCode?.trim() ? (['css'] as LanguageId[]) : []),
+        ...(template.jsCode?.trim() ? (['js'] as LanguageId[]) : []),
+      ]);
+
+      try {
+        const created = await saveProject(targetUserId, {
+          title: template.name.slice(0, 60),
+          description: template.description || '',
+          languages: templateLangs,
+          htmlCode: template.htmlCode,
+          cssCode: template.cssCode || '',
+          jsCode: template.jsCode || '',
+          authorEmail: currentUser
+            ? formatPublicEmailOrUsername(currentUser.email) || undefined
+            : undefined,
+        });
+        const updatedList = currentUser
+          ? await getUserProjects(currentUser.uid)
+          : getGuestProjects();
+        setProjects(updatedList);
+        if (isSharedView) {
+          setIsSharedView(false);
+          setSharedProjectData(null);
+        }
+        handleSelectProject(created);
+        setActiveTemplateId(template.id);
+        markTemplateUsed(template.id);
+        setPendingTemplate(null);
+        setPreviewingTemplate(null);
+        setIsTemplatesDrawerOpen(false);
+        showToast(`Đã tạo dự án mới từ mẫu '${template.name}'`, 'success');
+      } catch (err) {
+        console.error('Lỗi tạo dự án từ mẫu:', err);
+        showToast('Không thể tạo dự án mới từ mẫu này', 'danger');
+      }
+    },
+    [
+      currentUser,
+      hasUnsavedChanges,
+      activeProject,
+      activeCollabProject,
+      isSharedView,
+      projectTitle,
+      htmlCode,
+      cssCode,
+      jsCode,
+      activeLanguages,
+      handleSelectProject,
+      markTemplateUsed,
+      showToast,
+    ]
   );
 
   // Select sample template (confirm before overwriting non-empty code)
   const handleSelectTemplate = useCallback(
     (template: CodeTemplate) => {
       if (isEditorReadOnly) {
-        showToast('Bạn đang ở chế độ chỉ xem, không thể áp dụng mẫu');
+        showToast('Bạn đang ở chế độ chỉ xem, không thể áp dụng mẫu', 'warning');
         return;
       }
       if (!isCodeEmpty) {
         setPendingTemplate(template);
         return;
       }
-      applyTemplateImmediately(template);
+      applyTemplateImmediately(template, false);
+      setPreviewingTemplate(null);
+      setIsTemplatesDrawerOpen(false);
     },
     [isEditorReadOnly, isCodeEmpty, applyTemplateImmediately, showToast]
+  );
+
+  const handleOpenRelatedLessonFromTemplate = useCallback(
+    (lesson: TemplateRelatedLesson) => {
+      setPreviewingTemplate(null);
+      setIsTemplatesDrawerOpen(false);
+      setLearningTarget({
+        courseId: lesson.courseId,
+        slug: lesson.slug,
+        nonce: Date.now(),
+      });
+      setIsLearningOpen(true);
+    },
+    []
   );
 
   // Resizer drag
@@ -2614,10 +3181,21 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const openAuth = (mode: 'login' | 'signup') => {
+  const openAuth = useCallback((mode: 'login' | 'signup') => {
     setAuthModalInitialMode(mode);
     setIsAuthModalOpen(true);
-  };
+  }, []);
+
+  const handleOpenJoinByCode = useCallback(() => {
+    setPendingJoinWaitState(null);
+    if (!currentUser) {
+      pendingOpenJoinByCodeRef.current = true;
+      openAuth('login');
+      showToast('Vui lòng đăng nhập hoặc đăng ký để tham gia bằng mã dự án', 'info');
+      return;
+    }
+    setIsJoinByCodeModalOpen(true);
+  }, [currentUser, openAuth, showToast]);
 
   // Open code from learning section directly into the 3-tab editor
   const handleOpenLessonInEditor = useCallback((code: string) => {
@@ -2715,6 +3293,7 @@ export default function App() {
               onOpenInEditor={handleOpenLessonInEditor}
               theme={theme}
               onToggleTheme={handleToggleTheme}
+              initialTarget={learningTarget}
             />
           </div>
         ) : (
@@ -2751,6 +3330,7 @@ export default function App() {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onSelectTemplate={handleSelectTemplate}
+        onOpenTemplates={() => setIsTemplatesDrawerOpen(true)}
         isCopied={isCopied}
         isCodeEmpty={isCodeEmpty}
         activeTemplateId={activeTemplateId}
@@ -2770,7 +3350,8 @@ export default function App() {
               updateCollabProjectMeta(
                 activeCollabProject.id,
                 { title: t },
-                activeCollabProject.inviteToken
+                activeCollabProject.inviteToken,
+                activeCollabProject.joinCode
               ).catch(() => {});
             } else {
               setHasUnsavedChanges(true);
@@ -2794,6 +3375,10 @@ export default function App() {
           collabMemberCount={activeCollabProject ? Object.keys(activeCollabProject.members).length : 0}
           collabSyncState={collabSyncState}
           canEditTitle={!activeCollabProject || isCollabOwner}
+          pendingJoinRequestsCount={activeOwnerPendingRequestsCount}
+          pendingUserInvitesCount={userInviteInbox.length}
+          onOpenUserInvites={() => setIsUserInvitesModalOpen(true)}
+          onOpenJoinByCode={handleOpenJoinByCode}
           onOpenCollabInvite={() => {
             if (activeCollabProject) setInviteModalProjectId(activeCollabProject.id);
           }}
@@ -2923,6 +3508,7 @@ export default function App() {
             isTemplatesOpen={isTemplatesDrawerOpen}
             isPersonalizeOpen={isPersonalizeOpen}
             hideMobileNav={viewport.isKeyboardOpen}
+            pendingJoinRequestsCount={totalOwnerPendingRequestsCount}
           />
         )}
 
@@ -2954,9 +3540,9 @@ export default function App() {
               htmlCode={htmlCode}
               cssCode={cssCode}
               jsCode={jsCode}
-              onHtmlChange={setHtmlCode}
-              onCssChange={setCssCode}
-              onJsChange={setJsCode}
+              onHtmlChange={handleEditorHtmlChange}
+              onCssChange={handleEditorCssChange}
+              onJsChange={handleEditorJsChange}
               theme={theme}
               onFormatCode={handleFormatCode}
               isReadOnly={isEditorReadOnly}
@@ -2993,6 +3579,7 @@ export default function App() {
               onReplyLineComment={handleReplyLineComment}
               onToggleResolveLineComment={handleToggleResolveLineComment}
               onDeleteLineComment={handleDeleteLineComment}
+              onInterceptUndo={handleUndoTemplateReplace}
             />
           </div>
 
@@ -3072,27 +3659,31 @@ export default function App() {
         onCancel={() => setIsClearModalOpen(false)}
       />
 
-      {/* Confirmation Modal for Overwriting Non-Empty Editor with Template */}
-      <ConfirmModal
+      {/* Dialog khi editor đang có code và người dùng chọn áp dụng mẫu */}
+      <TemplateApplyConflictModal
+        template={pendingTemplate}
         isOpen={!!pendingTemplate}
-        title={`Áp dụng mẫu "${pendingTemplate?.name || ''}"?`}
-        message="Mã nguồn hiện tại trong trình soạn thảo sẽ bị thay thế bởi mẫu này."
-        confirmText="Áp dụng mẫu"
-        cancelText="Hủy bỏ"
-        isDangerous={false}
-        onConfirm={() => {
-          if (pendingTemplate) {
-            applyTemplateImmediately(pendingTemplate);
-            setPendingTemplate(null);
-          }
-        }}
         onCancel={() => setPendingTemplate(null)}
+        onCreateNewProject={(tmpl) => {
+          void handleCreateNewProjectFromTemplate(tmpl);
+        }}
+        onReplaceCurrentCode={(tmpl) => {
+          setPendingTemplate(null);
+          setPreviewingTemplate(null);
+          setIsTemplatesDrawerOpen(false);
+          applyTemplateImmediately(tmpl, true);
+        }}
       />
 
       {/* Authentication Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          if (!currentUser) {
+            pendingOpenJoinByCodeRef.current = false;
+          }
+        }}
         initialMode={authModalInitialMode}
         onWarning={(msg) => showToast(msg)}
         onSuccess={(msg) => showToast(msg)}
@@ -3135,6 +3726,10 @@ export default function App() {
         onDeleteDraft={handleDeleteGuestDraft}
         recentProjects={recentProjects}
         onOpenRecentProject={handleOpenRecentProject}
+        onOpenJoinByCode={handleOpenJoinByCode}
+        pendingUserInvitesCount={userInviteInbox.length}
+        onOpenUserInvites={() => setIsUserInvitesModalOpen(true)}
+        pendingJoinRequestsByProject={pendingJoinRequestCountsByProject}
         onRetry={() => {
           if (currentUser) {
             loadUserProjectsAndLastActive(currentUser.uid);
@@ -3144,12 +3739,39 @@ export default function App() {
         }}
       />
 
-      {/* Templates Drawer */}
+      {/* Template Browser & Preview Modal */}
       <TemplatesDrawer
         isOpen={isTemplatesDrawerOpen}
         onClose={() => setIsTemplatesDrawerOpen(false)}
         onSelectTemplate={handleSelectTemplate}
+        onOpenTemplatePreview={(tmpl) => setPreviewingTemplate(tmpl)}
         activeTemplateId={activeTemplateId}
+        favoriteIds={templatePrefs.favorites}
+        recentIds={templatePrefs.recentIds}
+        onToggleFavorite={handleToggleFavoriteTemplate}
+      />
+
+      <TemplatePreviewModal
+        template={previewingTemplate}
+        isOpen={!!previewingTemplate}
+        onClose={() => setPreviewingTemplate(null)}
+        onUseTemplate={handleSelectTemplate}
+        onCreateProjectFromTemplate={(tmpl) => {
+          void handleCreateNewProjectFromTemplate(tmpl);
+        }}
+        isFavorite={Boolean(
+          previewingTemplate && templatePrefs.favorites.includes(previewingTemplate.id)
+        )}
+        onToggleFavorite={handleToggleFavoriteTemplate}
+        onOpenRelatedLesson={handleOpenRelatedLessonFromTemplate}
+        isApplyDisabled={isEditorReadOnly}
+        applyDisabledReason={
+          isCollabViewer
+            ? 'Thành viên chỉ xem không thể áp dụng mẫu vào dự án nhóm'
+            : isCollabLockReadOnly
+            ? 'Phiên chỉnh sửa khác đang giữ khóa dự án này'
+            : 'Bạn đang ở chế độ chỉ đọc'
+        }
       />
 
       {/* Personalization Drawer */}
@@ -3183,6 +3805,7 @@ export default function App() {
         isActivityBarVisible={isActivityBarVisible}
         onOpenPersonalize={() => setIsPersonalizeOpen(true)}
         onOpenProjects={() => setIsProjectsPanelOpen(true)}
+        onOpenJoinByCode={handleOpenJoinByCode}
         onOpenTemplates={() => setIsTemplatesDrawerOpen(true)}
         onOpenLearn={() => setIsLearningOpen(true)}
         projects={projects}
@@ -3222,6 +3845,8 @@ export default function App() {
         isOpen={!!resolvedInviteModalProject}
         onClose={() => setInviteModalProjectId(null)}
         project={resolvedInviteModalProject}
+        currentUserId={currentUser?.uid || ''}
+        currentUserEmail={currentUser ? getAccountIdentity(currentUser).publicEmail : null}
         onUpdateInvite={async (options) => {
           if (!resolvedInviteModalProject || !currentUser) return;
           await updateCollabInviteSettings(resolvedInviteModalProject, currentUser, options);
@@ -3229,6 +3854,96 @@ export default function App() {
             showToast('Đã tạo liên kết mời mới');
           }
         }}
+        onUpdateJoinCode={async (options) => {
+          if (!resolvedInviteModalProject || !currentUser) return;
+          await updateCollabJoinCodeSettings(resolvedInviteModalProject, currentUser, options);
+          if (options.regenerateCode) {
+            showToast('Đã tạo mã dự án 4 chữ số mới');
+          }
+        }}
+        onChangeRole={async (targetUid, role: CollabInviteRole) => {
+          if (!resolvedInviteModalProject) return;
+          await changeCollabMemberRole(resolvedInviteModalProject.id, targetUid, role);
+          showToast('Đã cập nhật vai trò thành viên');
+        }}
+        onRemoveMember={async (targetUid) => {
+          if (!resolvedInviteModalProject) return;
+          await removeCollabMember(resolvedInviteModalProject.id, targetUid);
+          showToast('Đã xóa thành viên khỏi dự án nhóm');
+        }}
+        pendingRequests={inviteModalPendingRequests}
+        sentInvites={projectSentInvites}
+        blockedUsers={blockedCollabUsers}
+        onApproveRequest={async (req, role) => {
+          if (!resolvedInviteModalProject || !currentUser) return;
+          await approveJoinRequest(resolvedInviteModalProject, req, role, currentUser.uid);
+          showToast(`Đã chấp nhận ${req.requesterName} vào dự án`, 'success');
+        }}
+        onRejectRequest={async (req) => {
+          if (!resolvedInviteModalProject || !currentUser) return;
+          await rejectJoinRequest(resolvedInviteModalProject.id, req.requesterUid, currentUser.uid);
+          showToast(`Đã từ chối yêu cầu của ${req.requesterName}`, 'info');
+        }}
+        onBlockRequest={async (req) => {
+          if (!resolvedInviteModalProject || !currentUser) return;
+          await blockAndRejectJoinRequest(
+            resolvedInviteModalProject.id,
+            req,
+            currentUser.uid
+          );
+          showToast(`Đã chặn ${req.requesterName} khỏi dự án`, 'warning');
+        }}
+        onUnblockUser={async (targetUid) => {
+          if (!resolvedInviteModalProject) return;
+          await unblockCollabUser(resolvedInviteModalProject.id, targetUid);
+          showToast('Đã bỏ chặn người dùng', 'success');
+        }}
+        onSearchUsers={handleSearchUsersForInvite}
+        onSendDirectInvite={async (target, role) => {
+          if (!resolvedInviteModalProject || !currentUser) return;
+          await sendDirectCollabInvite(resolvedInviteModalProject, currentUser, target, role);
+          showToast(`Đã gửi lời mời tới ${target.displayName}`, 'success');
+        }}
+        onRevokeSentInvite={async (targetUid) => {
+          if (!resolvedInviteModalProject) return;
+          await revokeDirectCollabInvite(resolvedInviteModalProject.id, targetUid);
+          showToast('Đã thu hồi lời mời', 'info');
+        }}
+        onShowToast={(message, type) => showToast(message, type)}
+      />
+
+      {/* User Direct Invites Inbox Modal */}
+      <UserInvitesModal
+        isOpen={isUserInvitesModalOpen}
+        onClose={() => setIsUserInvitesModalOpen(false)}
+        invites={userInviteInbox}
+        onAcceptInvite={async (invite) => {
+          if (!currentUser) return;
+          const joinedProj = await acceptUserCollabInvite(invite, currentUser);
+          await handleSelectCollabProject(joinedProj);
+          showToast(`Đã tham gia dự án "${joinedProj.title}"`, 'success');
+        }}
+        onDeclineInvite={async (invite) => {
+          if (!currentUser) return;
+          await declineUserCollabInvite(invite, currentUser.uid);
+          showToast(`Đã từ chối lời mời vào "${invite.projectTitle}"`, 'info');
+        }}
+      />
+
+      {/* Join By 4-digit Project Code / Pending Approval Modal */}
+      <JoinByCodeModal
+        isOpen={isJoinByCodeModalOpen}
+        onClose={() => {
+          setIsJoinByCodeModalOpen(false);
+          setPendingJoinWaitState(null);
+        }}
+        currentUser={currentUser}
+        onOpenAuth={() => openAuth('login')}
+        initialPendingState={pendingJoinWaitState}
+        onJoinedProject={async (joinedProject) => {
+          await handleSelectCollabProject(joinedProject);
+        }}
+        onShowToast={(message, type) => showToast(message, type)}
       />
 
       {/* Member Management Modal */}
@@ -3237,6 +3952,7 @@ export default function App() {
         onClose={() => setMembersModalProjectId(null)}
         project={resolvedMembersModalProject}
         currentUserId={currentUser?.uid || ''}
+        currentUserEmail={currentUser ? getAccountIdentity(currentUser).publicEmail : null}
         onChangeRole={async (targetUid, role: CollabInviteRole) => {
           if (!resolvedMembersModalProject) return;
           await changeCollabMemberRole(resolvedMembersModalProject.id, targetUid, role);

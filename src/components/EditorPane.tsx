@@ -4,7 +4,7 @@ import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { javascript } from '@codemirror/lang-javascript';
 import { Decoration, DecorationSet, EditorView, keymap } from '@codemirror/view';
-import { RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { yCollab, ySyncAnnotation, ySyncFacet, yUndoManagerKeymap } from 'y-codemirror.next';
 import * as Y from 'yjs';
 import { AlignLeft, Eye, Loader2, Lock, MessageSquare, Plus, Redo2, Undo2, X } from 'lucide-react';
@@ -264,6 +264,7 @@ interface EditorPaneProps {
   onReplyLineComment?: (commentId: string, text: string) => Promise<void>;
   onToggleResolveLineComment?: (commentId: string, nextResolved: boolean) => Promise<void>;
   onDeleteLineComment?: (commentId: string) => Promise<void>;
+  onInterceptUndo?: () => boolean;
 }
 
 export const EditorPane: React.FC<EditorPaneProps> = ({
@@ -307,7 +308,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   onReplyLineComment,
   onToggleResolveLineComment,
   onDeleteLineComment,
+  onInterceptUndo,
 }) => {
+  const onInterceptUndoRef = useRef(onInterceptUndo);
+  onInterceptUndoRef.current = onInterceptUndo;
   const { settings } = useTheme();
   const isTouch = useIsTouch();
   const isMobile = useIsMobile();
@@ -563,6 +567,14 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       list.push(presenceExtension);
     }
     list.push(
+      Prec.highest(
+        keymap.of([
+          {
+            key: 'Mod-z',
+            run: () => onInterceptUndoRef.current?.() ?? false,
+          },
+        ])
+      ),
       keymap.of([
         {
           key: 'Alt-Shift-f',
@@ -1076,6 +1088,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
 
   const handleEditorUndo = useCallback(() => {
     if (isReadOnly) return;
+    if (onInterceptUndoRef.current?.()) {
+      editorViewRef.current?.focus();
+      return;
+    }
     if (isCollabEditorReady && activeCollabUndoManager) {
       activeCollabUndoManager.undo();
       editorViewRef.current?.focus();

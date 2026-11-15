@@ -50,6 +50,23 @@
         "updatedAt": { "type": "string" }
       }
     },
+    "TemplatePreferences": {
+      "title": "TemplatePreferences",
+      "description": "Danh sách mẫu yêu thích và các mẫu đã dùng gần đây của người dùng",
+      "type": "object",
+      "properties": {
+        "favorites": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "recentIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["favorites", "recentIds", "updatedAt"]
+    },
     "CollabProject": {
       "title": "CollabProject",
       "description": "Dự án nhóm cộng tác thời gian thực sử dụng Yjs CRDT",
@@ -65,6 +82,15 @@
         "inviteEnabled": { "type": "boolean" },
         "inviteToken": { "type": "string", "maxLength": 128 },
         "inviteRole": { "type": "string", "enum": ["editor", "viewer"] },
+        "inviteExpiresAt": { "type": ["string", "number", "null"] },
+        "inviteExpiryPreset": { "type": "string", "enum": ["never", "1h", "24h", "7d"] },
+        "inviteRequiresApproval": { "type": "boolean" },
+        "joinCode": { "type": ["string", "null"], "maxLength": 4 },
+        "joinCodeEnabled": { "type": "boolean" },
+        "joinCodeRole": { "type": "string", "enum": ["editor", "viewer"] },
+        "joinCodeExpiresAt": { "type": ["string", "number", "null"] },
+        "joinCodeExpiryPreset": { "type": "string", "enum": ["15m", "1h", "24h", "never", "7d"] },
+        "memberLimit": { "type": "integer" },
         "inviteTokenUsed": { "type": "string", "maxLength": 128 },
         "singleEditorPerAccount": { "type": "boolean" },
         "createdAt": { "type": "string" },
@@ -108,6 +134,9 @@
         "inviteRole": { "type": "string", "enum": ["editor", "viewer"] },
         "inviteEnabled": { "type": "boolean" },
         "projectTitle": { "type": "string", "maxLength": 60 },
+        "expiresAt": { "type": ["string", "number", "null"] },
+        "requiresApproval": { "type": "boolean" },
+        "memberLimit": { "type": "integer" },
         "updatedAt": { "type": "string" }
       },
       "required": ["projectId", "ownerId", "inviteRole", "inviteEnabled", "updatedAt"]
@@ -163,6 +192,133 @@
         "updatedAt": { "type": "integer" }
       },
       "required": ["device", "refreshNonce", "updatedByUid", "updatedByName", "updatedAt"]
+    },
+    "CollabJoinCode": {
+      "title": "CollabJoinCode",
+      "description": "Tra cứu mã dự án 4 chữ số (không cho phép list, chỉ get khi nhập đúng 4 số)",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 4, "maxLength": 4, "pattern": "^[0-9]{4}$" },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "ownerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "defaultRole": { "type": "string", "enum": ["editor", "viewer"] },
+        "enabled": { "type": "boolean" },
+        "expiresAt": { "type": ["string", "number", "null"] },
+        "expiryPreset": { "type": "string", "enum": ["15m", "1h", "24h", "never", "7d"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["code", "projectId", "projectTitle", "ownerId", "ownerName", "defaultRole", "enabled", "expiryPreset", "createdAt", "updatedAt"]
+    },
+    "CollabJoinRequest": {
+      "title": "CollabJoinRequest",
+      "description": "Yêu cầu tham gia dự án nhóm qua mã 4 chữ số hoặc liên kết cần chủ dự án chấp nhận",
+      "type": "object",
+      "properties": {
+        "requesterUid": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "requesterName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "requesterPhotoURL": { "type": ["string", "null"], "maxLength": 1024 },
+        "requesterPublicLabel": { "type": "string", "maxLength": 120 },
+        "source": { "type": "string", "enum": ["code", "link"] },
+        "codeUsed": { "type": ["string", "null"], "maxLength": 4 },
+        "inviteTokenUsed": { "type": ["string", "null"], "maxLength": 128 },
+        "requestedRole": { "type": "string", "enum": ["editor", "viewer"] },
+        "assignedRole": { "type": ["string", "null"], "enum": ["editor", "viewer", null] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "cancelled"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "resolvedAt": { "type": ["string", "null"] },
+        "resolvedBy": { "type": ["string", "null"], "maxLength": 128 }
+      },
+      "required": ["requesterUid", "projectId", "projectTitle", "requesterName", "requesterPublicLabel", "source", "requestedRole", "status", "createdAt", "updatedAt"]
+    },
+    "CollabBlockedUser": {
+      "title": "CollabBlockedUser",
+      "description": "Danh sách người dùng bị chủ dự án chặn không cho gửi yêu cầu hoặc tham gia lại",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "photoURL": { "type": ["string", "null"], "maxLength": 1024 },
+        "publicLabel": { "type": "string", "maxLength": 120 },
+        "blockedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "name", "publicLabel", "blockedBy", "createdAt"]
+    },
+    "PublicUserProfile": {
+      "title": "PublicUserProfile",
+      "description": "Hồ sơ tìm kiếm công khai (opt-in) dùng khi mời thành viên theo tên hoặc tên đăng nhập; không chứa email ảo",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "displayNameLower": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "username": { "type": ["string", "null"], "maxLength": 30 },
+        "usernameLower": { "type": ["string", "null"], "maxLength": 30 },
+        "photoURL": { "type": ["string", "null"], "maxLength": 1024 },
+        "hasVerifiedEmail": { "type": "boolean" },
+        "allowProfileSearch": { "type": "boolean" },
+        "allowEmailSearch": { "type": "boolean" },
+        "acceptDirectInvites": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "displayName", "displayNameLower", "hasVerifiedEmail", "allowProfileSearch", "allowEmailSearch", "acceptDirectInvites", "updatedAt"]
+    },
+    "EmailLookup": {
+      "title": "EmailLookup",
+      "description": "Bảng tra cứu 1-1 theo mã băm SHA-256 của email đã xác minh (cấm list)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "updatedAt"]
+    },
+    "CollabDirectInvite": {
+      "title": "CollabDirectInvite",
+      "description": "Lời mời trực tiếp do chủ dự án gửi tới người dùng (người nhận phải tự Chấp nhận)",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string", "maxLength": 128 },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "targetUid": { "type": "string", "maxLength": 128 },
+        "targetName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "targetUsername": { "type": ["string", "null"], "maxLength": 30 },
+        "targetPhotoURL": { "type": ["string", "null"], "maxLength": 1024 },
+        "inviterUid": { "type": "string", "maxLength": 128 },
+        "inviterName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "inviterPhotoURL": { "type": ["string", "null"], "maxLength": 1024 },
+        "role": { "type": "string", "enum": ["editor", "viewer"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "revoked"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "respondedAt": { "type": ["string", "null"] }
+      },
+      "required": ["projectId", "projectTitle", "targetUid", "targetName", "inviterUid", "inviterName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "UserInviteInboxItem": {
+      "title": "UserInviteInboxItem",
+      "description": "Bản ghi hộp thư lời mời dự án nhóm của người dùng nhận mời",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string", "maxLength": 128 },
+        "projectTitle": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "targetUid": { "type": "string", "maxLength": 128 },
+        "inviterUid": { "type": "string", "maxLength": 128 },
+        "inviterName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "inviterPhotoURL": { "type": ["string", "null"], "maxLength": 1024 },
+        "role": { "type": "string", "enum": ["editor", "viewer"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "revoked"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "respondedAt": { "type": ["string", "null"] }
+      },
+      "required": ["projectId", "projectTitle", "targetUid", "inviterUid", "inviterName", "role", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -177,6 +333,22 @@
     "/users/{userId}/learning/{docId}": {
       "schema": "LearningProgress",
       "description": "Tiến trình học tập theo từng khóa học"
+    },
+    "/users/{userId}/userInvites/{projectId}": {
+      "schema": "UserInviteInboxItem",
+      "description": "Hộp thư lời mời tham gia dự án nhóm của người dùng"
+    },
+    "/users/{userId}/templatePrefs/{prefId}": {
+      "schema": "TemplatePreferences",
+      "description": "Mẫu yêu thích và mẫu dùng gần đây của người dùng"
+    },
+    "/publicProfiles/{uid}": {
+      "schema": "PublicUserProfile",
+      "description": "Hồ sơ tìm kiếm công khai (opt-in) dùng khi mời thành viên"
+    },
+    "/emailLookup/{emailHash}": {
+      "schema": "EmailLookup",
+      "description": "Tra cứu chính xác email đã xác minh qua mã băm SHA-256 (cấm list)"
     },
     "/collabProjects/{projectId}": {
       "schema": "CollabProject",
@@ -205,6 +377,22 @@
     "/collabInvites/{inviteToken}": {
       "schema": "CollabInvite",
       "description": "Tra cứu liên kết mời dự án nhóm theo token bí mật"
+    },
+    "/joinCodes/{code}": {
+      "schema": "CollabJoinCode",
+      "description": "Tra cứu dự án nhóm bằng mã 4 chữ số"
+    },
+    "/collabProjects/{projectId}/joinRequests/{requesterUid}": {
+      "schema": "CollabJoinRequest",
+      "description": "Yêu cầu tham gia dự án đang chờ chủ dự án phê duyệt"
+    },
+    "/collabProjects/{projectId}/invites/{targetUid}": {
+      "schema": "CollabDirectInvite",
+      "description": "Lời mời trực tiếp đã gửi tới người dùng (chờ người nhận chấp nhận)"
+    },
+    "/collabProjects/{projectId}/blockedUsers/{targetUid}": {
+      "schema": "CollabBlockedUser",
+      "description": "Danh sách người dùng đã bị chủ dự án chặn"
     }
   }
 }

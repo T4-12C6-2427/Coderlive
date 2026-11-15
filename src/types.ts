@@ -35,16 +35,45 @@ export interface StaticIssue {
   ruleId: string;
 }
 
+export type TemplateCategory =
+  | 'Trang web'
+  | 'Thành phần giao diện'
+  | 'Ứng dụng nhỏ'
+  | 'Trò chơi'
+  | 'Hiệu ứng & Canvas'
+  | 'Học tập';
+
+export type TemplateDifficulty = 'Dễ' | 'Trung bình' | 'Nâng cao';
+
+export interface TemplateRelatedLesson {
+  courseId: 'html' | 'css' | 'js';
+  slug: string;
+  title: string;
+}
+
 export interface CodeTemplate {
   id: string;
   name: string;
   description: string;
   badge: string;
+  category: TemplateCategory;
+  difficulty: TemplateDifficulty;
+  tags: string[];
+  learningPoints: string[];
+  relatedLessons: TemplateRelatedLesson[];
+  createdOrder: number;
+  iconKey?: string;
   htmlCode: string;
   cssCode?: string;
   jsCode?: string;
   // Legacy support
   code?: string;
+}
+
+export interface TemplatePrefs {
+  favorites: string[];
+  recentIds: string[];
+  updatedAt: string;
 }
 
 export interface Project {
@@ -65,12 +94,19 @@ export interface Project {
 
 export type CollabRole = 'owner' | 'editor' | 'viewer';
 export type CollabInviteRole = 'editor' | 'viewer';
+export type InviteExpiryPreset = 'never' | '1h' | '24h' | '7d';
+export type JoinCodeExpiryPreset = '15m' | '1h' | '24h';
+
+export const DEFAULT_COLLAB_MEMBER_LIMIT = 20;
 
 export interface CollabMemberProfile {
   name: string;
   photoURL: string | null;
   email?: string;
 }
+
+export type JoinRequestSource = 'code' | 'link';
+export type JoinRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
 export interface CollabProject {
   id: string;
@@ -83,10 +119,136 @@ export interface CollabProject {
   inviteEnabled: boolean;
   inviteToken: string;
   inviteRole: CollabInviteRole;
+  inviteExpiresAt?: number | null;
+  inviteExpiryPreset?: InviteExpiryPreset;
+  inviteRequiresApproval?: boolean;
+  joinCode?: string | null;
+  joinCodeEnabled?: boolean;
+  joinCodeRole?: CollabInviteRole;
+  joinCodeExpiresAt?: number | null;
+  joinCodeExpiryPreset?: JoinCodeExpiryPreset | InviteExpiryPreset;
+  memberLimit?: number;
   inviteTokenUsed?: string;
   singleEditorPerAccount?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CollabJoinCode {
+  code: string;
+  projectId: string;
+  projectTitle: string;
+  ownerId: string;
+  ownerName: string;
+  defaultRole: CollabInviteRole;
+  enabled: boolean;
+  expiresAt: number | null;
+  expiryPreset: JoinCodeExpiryPreset | InviteExpiryPreset;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CollabJoinRequest {
+  requesterUid: string;
+  projectId: string;
+  projectTitle: string;
+  requesterName: string;
+  requesterPhotoURL: string | null;
+  requesterPublicLabel: string;
+  source: JoinRequestSource;
+  codeUsed: string | null;
+  inviteTokenUsed: string | null;
+  requestedRole: CollabInviteRole;
+  assignedRole: CollabInviteRole | null;
+  status: JoinRequestStatus;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+}
+
+export interface CollabBlockedUser {
+  uid: string;
+  name: string;
+  photoURL: string | null;
+  publicLabel: string;
+  blockedBy: string;
+  createdAt: string;
+}
+
+export type JoinCollabResult =
+  | { status: 'joined'; project: CollabProject }
+  | { status: 'already_member'; project: CollabProject }
+  | {
+      status: 'pending';
+      projectId: string;
+      projectTitle: string;
+      requestedRole: CollabInviteRole;
+      source: JoinRequestSource;
+      alreadyPending?: boolean;
+    };
+
+export interface UserPrivacySettings {
+  allowProfileSearch: boolean;
+  allowEmailSearch: boolean;
+  acceptDirectInvites: boolean;
+}
+
+export interface PublicUserProfile {
+  uid: string;
+  displayName: string;
+  displayNameLower: string;
+  username: string | null;
+  usernameLower: string | null;
+  photoURL: string | null;
+  hasVerifiedEmail: boolean;
+  allowProfileSearch: boolean;
+  allowEmailSearch: boolean;
+  acceptDirectInvites: boolean;
+  updatedAt: string;
+}
+
+export interface UserSearchResult {
+  uid: string;
+  displayName: string;
+  username: string | null;
+  photoURL: string | null;
+  hasVerifiedEmail: boolean;
+  acceptDirectInvites: boolean;
+  matchedBy: 'email' | 'username' | 'name';
+}
+
+export type CollabDirectInviteStatus = 'pending' | 'accepted' | 'declined' | 'revoked';
+
+export interface CollabDirectInvite {
+  projectId: string;
+  projectTitle: string;
+  targetUid: string;
+  targetName: string;
+  targetUsername: string | null;
+  targetPhotoURL: string | null;
+  inviterUid: string;
+  inviterName: string;
+  inviterPhotoURL: string | null;
+  role: CollabInviteRole;
+  status: CollabDirectInviteStatus;
+  createdAt: string;
+  updatedAt: string;
+  respondedAt: string | null;
+}
+
+export interface UserInviteInboxItem {
+  projectId: string;
+  projectTitle: string;
+  targetUid: string;
+  inviterUid: string;
+  inviterName: string;
+  inviterPhotoURL: string | null;
+  role: CollabInviteRole;
+  status: CollabDirectInviteStatus;
+  createdAt: string;
+  updatedAt: string;
+  respondedAt: string | null;
 }
 
 export interface CollabUpdateChunk {

@@ -143,8 +143,20 @@ export function getPublicUserEmail(email: string | null | undefined): string | n
   return email;
 }
 
+export function maskEmail(email: string | null | undefined): string | null {
+  const pub = getPublicUserEmail(email);
+  if (!pub) return null;
+  const trimmed = pub.trim();
+  const atIdx = trimmed.indexOf('@');
+  if (atIdx <= 0 || atIdx === trimmed.length - 1) return null;
+  const localPart = trimmed.slice(0, atIdx);
+  const domainPart = trimmed.slice(atIdx + 1);
+  return `${localPart.charAt(0)}***@${domainPart}`;
+}
+
 export interface UserLikeForIdentity {
   email?: string | null;
+  emailVerified?: boolean;
   displayName?: string | null;
   photoURL?: string | null;
   providerData?: ReadonlyArray<{
@@ -153,6 +165,25 @@ export interface UserLikeForIdentity {
     displayName?: string | null;
     photoURL?: string | null;
   }>;
+}
+
+/**
+ * Chỉ trả về email công khai đã được xác minh (email Google liên kết hoặc email/mật khẩu đã xác minh).
+ * Tuyệt đối không bao giờ trả về email ảo @users.coderlive.app.
+ */
+export function getVerifiedPublicEmail(user: UserLikeForIdentity | null | undefined): string | null {
+  if (!user) return null;
+  const providers = Array.isArray(user.providerData) ? user.providerData : [];
+  const googleProviderInfo = providers.find((p) => p?.providerId === 'google.com');
+  const googleEmail = getPublicUserEmail(googleProviderInfo?.email);
+  if (googleEmail) {
+    return googleEmail.trim().toLowerCase();
+  }
+  const directEmail = getPublicUserEmail(user.email);
+  if (directEmail && user.emailVerified === true) {
+    return directEmail.trim().toLowerCase();
+  }
+  return null;
 }
 
 export interface AccountIdentity {

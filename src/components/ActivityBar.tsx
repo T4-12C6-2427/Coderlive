@@ -23,6 +23,7 @@ export interface ActivityBarProps {
   isTemplatesOpen?: boolean;
   isPersonalizeOpen?: boolean;
   hideMobileNav?: boolean;
+  pendingJoinRequestsCount?: number;
 }
 
 export const ActivityBar: React.FC<ActivityBarProps> = ({
@@ -37,6 +38,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   isTemplatesOpen = false,
   isPersonalizeOpen = false,
   hideMobileNav = false,
+  pendingJoinRequestsCount = 0,
 }) => {
   return (
     <>
@@ -66,7 +68,15 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           </Tooltip>
 
           {/* Dự án của tôi */}
-          <Tooltip content="Dự án của tôi" shortcut="Alt+2" side="right">
+          <Tooltip
+            content={
+              pendingJoinRequestsCount > 0
+                ? `Dự án của tôi (${pendingJoinRequestsCount} yêu cầu tham gia)`
+                : 'Dự án của tôi'
+            }
+            shortcut="Alt+2"
+            side="right"
+          >
             <button
               onClick={onOpenProjects}
               className={`relative w-9 h-9 rounded-[var(--radius-sm)] flex items-center justify-center transition-all cursor-pointer ${
@@ -74,12 +84,24 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                   ? 'bg-accent-soft text-accent'
                   : 'text-secondary hover:text-primary hover:bg-[var(--border-subtle)]'
               }`}
-              aria-label="Dự án của tôi"
+              aria-label={
+                pendingJoinRequestsCount > 0
+                  ? `Dự án của tôi (${pendingJoinRequestsCount} yêu cầu tham gia)`
+                  : 'Dự án của tôi'
+              }
             >
               {isProjectsOpen && (
                 <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-accent rounded-r" />
               )}
               <FolderGit2 className="w-4.5 h-4.5" strokeWidth={1.5} />
+              {pendingJoinRequestsCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-accent text-accent-on text-[9px] font-bold leading-none flex items-center justify-center border border-app tabular-nums"
+                >
+                  {pendingJoinRequestsCount > 9 ? '9+' : pendingJoinRequestsCount}
+                </span>
+              )}
             </button>
           </Tooltip>
 
@@ -186,11 +208,26 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           <button
             type="button"
             onClick={onOpenProjects}
+            aria-label={
+              pendingJoinRequestsCount > 0
+                ? `Dự án (${pendingJoinRequestsCount} yêu cầu tham gia)`
+                : 'Dự án'
+            }
             className={`touch-target-h relative flex flex-col items-center justify-center py-1 px-1 flex-1 min-w-0 rounded-[var(--radius-sm)] text-[10px] font-medium transition-colors cursor-pointer ${
               isProjectsOpen ? 'text-accent font-semibold bg-accent-soft/50' : 'text-muted hover:text-primary'
             }`}
           >
-            <FolderGit2 className="w-4 h-4 mb-0.5 flex-shrink-0" strokeWidth={1.5} />
+            <span className="relative inline-flex">
+              <FolderGit2 className="w-4 h-4 mb-0.5 flex-shrink-0" strokeWidth={1.5} />
+              {pendingJoinRequestsCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-1 rounded-full bg-accent text-accent-on text-[8px] font-bold leading-none flex items-center justify-center border border-elevated tabular-nums"
+                >
+                  {pendingJoinRequestsCount > 9 ? '9+' : pendingJoinRequestsCount}
+                </span>
+              )}
+            </span>
             <span className="truncate max-w-full">Dự án</span>
           </button>
 

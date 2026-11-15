@@ -20,7 +20,8 @@ import {
   FileCode2,
   ChevronRight,
   Sidebar,
-  Gauge
+  Gauge,
+  KeyRound,
 } from 'lucide-react';
 import { Kbd } from './ui/Kbd';
 import { Project, WorkspacePreset } from '../types';
@@ -48,6 +49,7 @@ export interface CommandPaletteProps {
   isActivityBarVisible: boolean;
   onOpenPersonalize: () => void;
   onOpenProjects: () => void;
+  onOpenJoinByCode?: () => void;
   onOpenTemplates: () => void;
   onOpenLearn: (lessonSlug?: string) => void;
   projects?: Project[];
@@ -88,6 +90,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   isActivityBarVisible,
   onOpenPersonalize,
   onOpenProjects,
+  onOpenJoinByCode,
   onOpenTemplates,
   onOpenLearn,
   projects = [],
@@ -141,6 +144,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         action: onNewProject,
         keywords: ['new', 'tao moi', 'project', 'du an'],
       },
+      ...(onOpenJoinByCode
+        ? [
+            {
+              id: 'cmd-join-by-code',
+              title: 'Tham gia bằng mã dự án',
+              category: 'actions' as const,
+              icon: <KeyRound className="w-4 h-4 text-accent" strokeWidth={1.5} />,
+              action: onOpenJoinByCode,
+              keywords: ['tham gia', 'ma du an', 'code', 'du an nhom', 'join'],
+            },
+          ]
+        : []),
       {
         id: 'cmd-format',
         title: 'Định dạng mã nguồn (Format Code)',
@@ -329,6 +344,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onOpenPersonalize,
     onOpenTemplates,
     onOpenProjects,
+    onOpenJoinByCode,
     onOpenLearn,
     projects,
     onSelectProject,

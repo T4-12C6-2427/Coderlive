@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 export interface SwitchProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label?: string;
   description?: string;
+  ariaLabel?: string;
   disabled?: boolean;
   size?: 'sm' | 'md';
 }
@@ -14,6 +15,7 @@ export const Switch: React.FC<SwitchProps> = ({
   onChange,
   label,
   description,
+  ariaLabel,
   disabled = false,
   size = 'md',
 }) => {
@@ -27,6 +29,7 @@ export const Switch: React.FC<SwitchProps> = ({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={`touch-hit-expand relative inline-flex items-center flex-shrink-0 rounded-full transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-base)] ${switchSize} ${
@@ -68,8 +71,6 @@ export const Slider: React.FC<SliderProps> = ({
   valueDisplay,
   className = '',
 }) => {
-  const percentage = Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
-
   return (
     <div className={`space-y-1.5 ${className}`}>
       {(label || valueDisplay !== undefined) && (
@@ -106,6 +107,7 @@ export interface SelectProps<T extends string | number> {
   onChange: (val: T) => void;
   label?: string;
   className?: string;
+  selectClassName?: string;
 }
 
 export function Select<T extends string | number>({
@@ -114,15 +116,22 @@ export function Select<T extends string | number>({
   onChange,
   label,
   className = '',
+  selectClassName = '',
 }: SelectProps<T>) {
+  const selectId = useId();
   return (
     <div className={`space-y-1 ${className}`}>
-      {label && <label className="block text-xs font-medium text-secondary">{label}</label>}
+      {label && (
+        <label htmlFor={selectId} className="block text-xs font-medium text-secondary">
+          {label}
+        </label>
+      )}
       <div className="relative">
         <select
+          id={selectId}
           value={value}
           onChange={(e) => onChange(e.target.value as T)}
-          className="touch-target w-full h-8 px-3 pr-8 bg-elevated text-primary text-xs font-medium border border-default rounded-[var(--radius-sm)] appearance-none outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent-base)] cursor-pointer"
+          className={`touch-target w-full h-8 px-3 pr-8 bg-elevated text-primary text-xs font-medium border border-default rounded-[var(--radius-sm)] appearance-none outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-base)] cursor-pointer ${selectClassName}`}
         >
           {options.map((opt) => (
             <option key={String(opt.value)} value={opt.value}>

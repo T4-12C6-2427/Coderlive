@@ -20,6 +20,8 @@ import {
   ArrowRightLeft,
   History,
   RotateCcw,
+  KeyRound,
+  Inbox,
 } from 'lucide-react';
 import { CollabProject, Project } from '../types';
 import { GuestDraft, RecentProjectRef } from '../lib/draftsAndRecents';
@@ -59,6 +61,10 @@ export interface ProjectsPanelProps {
   onDeleteDraft?: (draftId: string) => void;
   recentProjects?: RecentProjectRef[];
   onOpenRecentProject?: (item: RecentProjectRef) => void;
+  onOpenJoinByCode?: () => void;
+  pendingUserInvitesCount?: number;
+  onOpenUserInvites?: () => void;
+  pendingJoinRequestsByProject?: Record<string, number>;
 }
 
 export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
@@ -92,6 +98,10 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
   onDeleteDraft,
   recentProjects = [],
   onOpenRecentProject,
+  onOpenJoinByCode,
+  pendingUserInvitesCount = 0,
+  onOpenUserInvites,
+  pendingJoinRequestsByProject = {},
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -232,9 +242,9 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
           </div>
         )}
 
-        {/* Action Header: Search & Create New Button */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
+        {/* Action Header: Search + Create New & Join by Code Buttons */}
+        <div className="space-y-2">
+          <div className="relative">
             <Search
               className="w-3.5 h-3.5 absolute left-3 top-3 sm:top-2.5 text-muted pointer-events-none"
               strokeWidth={1.5}
@@ -248,18 +258,63 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Tìm kiếm dự án..."
               aria-label="Tìm kiếm dự án"
-              className="w-full h-10 sm:h-8 pl-8 pr-3 text-xs bg-elevated border border-default rounded-[var(--radius-sm)] text-primary placeholder-muted outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent-base)]"
+              className="w-full h-10 sm:h-8 pl-8 pr-3 text-base sm:text-xs bg-elevated border border-default rounded-[var(--radius-sm)] text-primary placeholder-muted outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent-base)]"
             />
           </div>
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => onCreateNewProject()}
-            leftIcon={<Plus className="w-3.5 h-3.5" strokeWidth={1.5} />}
-          >
-            Tạo mới
-          </Button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => onCreateNewProject()}
+              leftIcon={<Plus className="w-3.5 h-3.5" strokeWidth={1.5} />}
+              className="flex-1 min-w-[130px] min-h-[44px] sm:min-h-0"
+            >
+              Tạo dự án mới
+            </Button>
+            {onOpenJoinByCode && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  onClose();
+                  onOpenJoinByCode();
+                }}
+                leftIcon={<KeyRound className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />}
+                className="flex-1 min-w-[130px] min-h-[44px] sm:min-h-0"
+              >
+                Tham gia bằng mã
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Pending Direct Invites Banner */}
+        {!isGuest && pendingUserInvitesCount > 0 && onOpenUserInvites && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenUserInvites();
+            }}
+            className="w-full p-3 rounded-[var(--radius-md)] bg-accent-soft border border-[var(--accent-base)]/40 hover:border-[var(--accent-base)] text-left flex items-center justify-between gap-2.5 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-accent text-accent-on flex items-center justify-center flex-shrink-0">
+                <Inbox className="w-3.5 h-3.5" strokeWidth={1.5} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-primary truncate">
+                  Bạn có <span className="tabular-nums">{pendingUserInvitesCount}</span> lời mời tham gia dự án
+                </p>
+                <p className="text-[11px] text-secondary truncate">
+                  Bấm để xem và Chấp nhận hoặc Từ chối
+                </p>
+              </div>
+            </div>
+            <span className="text-[11px] font-semibold text-accent flex-shrink-0">Xem</span>
+          </button>
+        )}
 
         {/* Error banner */}
         {error && (
@@ -293,14 +348,29 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
             title="Chưa có dự án nào"
             description="Hãy lưu lại sản phẩm sáng tạo đầu tiên của bạn hoặc tạo một dự án nhóm."
             action={
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => onCreateNewProject()}
-                leftIcon={<Plus className="w-3.5 h-3.5" strokeWidth={1.5} />}
-              >
-                Tạo dự án đầu tiên
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => onCreateNewProject()}
+                  leftIcon={<Plus className="w-3.5 h-3.5" strokeWidth={1.5} />}
+                >
+                  Tạo dự án đầu tiên
+                </Button>
+                {onOpenJoinByCode && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      onClose();
+                      onOpenJoinByCode();
+                    }}
+                    leftIcon={<KeyRound className="w-3.5 h-3.5" strokeWidth={1.5} />}
+                  >
+                    Tham gia bằng mã
+                  </Button>
+                )}
+              </div>
             }
           />
         ) : filteredPersonal.length === 0 &&
@@ -463,14 +533,29 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
                     <span>Dự án nhóm ({filteredCollab.length})</span>
                   </div>
                   {!isGuest && (
-                    <button
-                      type="button"
-                      onClick={() => onCreateNewProject('collab')}
-                      className="touch-target-h text-[11px] font-medium text-accent hover:underline cursor-pointer flex items-center gap-1 px-1"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Tạo nhóm</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {onOpenJoinByCode && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenJoinByCode();
+                          }}
+                          className="touch-target-h text-[11px] font-medium text-secondary hover:text-primary cursor-pointer flex items-center gap-1 px-1"
+                        >
+                          <KeyRound className="w-3 h-3 text-accent" />
+                          <span>Nhập mã</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onCreateNewProject('collab')}
+                        className="touch-target-h text-[11px] font-medium text-accent hover:underline cursor-pointer flex items-center gap-1 px-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Tạo nhóm</span>
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -549,6 +634,13 @@ export const ProjectsPanel: React.FC<ProjectsPanelProps> = ({
                                   {isActive && (
                                     <Badge variant="success" size="sm">
                                       Đang mở
+                                    </Badge>
+                                  )}
+                                  {isOwner && (pendingJoinRequestsByProject[cp.id] || 0) > 0 && (
+                                    <Badge variant="warning" size="sm">
+                                      <span className="tabular-nums">
+                                        {pendingJoinRequestsByProject[cp.id]} chờ duyệt
+                                      </span>
                                     </Badge>
                                   )}
                                 </div>

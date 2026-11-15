@@ -1,4 +1,16 @@
-import { CodeTemplate } from '../types';
+import { CodeTemplate, TemplateCategory } from '../types';
+import { BATCH_1_WEBSITE_TEMPLATES } from './templates/batch1Websites';
+import { BATCH_2_TEMPLATES } from './templates/batch2ComponentsAndApps';
+
+export const TEMPLATE_CATEGORIES: ReadonlyArray<'Tất cả' | TemplateCategory> = [
+  'Tất cả',
+  'Trang web',
+  'Thành phần giao diện',
+  'Ứng dụng nhỏ',
+  'Trò chơi',
+  'Hiệu ứng & Canvas',
+  'Học tập',
+];
 
 export const DEFAULT_HTML_PART = `<div class="card">
   <div class="badge">🚀 Coderlive Web Studio</div>
@@ -187,12 +199,27 @@ colorBtn.addEventListener('click', () => {
 
 console.log('Trang web Coderlive đã tải thành công với 3 tab riêng biệt!');`;
 
-export const CODE_TEMPLATES: CodeTemplate[] = [
+const CORE_TEMPLATES: CodeTemplate[] = [
   {
     id: 'welcome',
     name: 'Trang Chào Mừng',
     description: 'Thẻ Glassmorphism hiện đại với các hiệu ứng tương tác màu sắc và đếm số',
     badge: 'Mặc định',
+    category: 'Thành phần giao diện',
+    difficulty: 'Dễ',
+    tags: ['glassmorphism', 'the', 'mac dinh', 'chao mung', 'dem so'],
+    learningPoints: [
+      'Tạo hiệu ứng kính mờ hiện đại bằng backdrop-filter và gradient',
+      'Lắng nghe sự kiện click để cập nhật số đếm và màu nền',
+      'Kết hợp mượt mà giữa 3 tab HTML, CSS và JavaScript',
+    ],
+    relatedLessons: [
+      { courseId: 'html', slug: 'css-va-javascript-co-ban', title: 'Thêm CSS & JavaScript cơ bản' },
+      { courseId: 'css', slug: 'mau-sac-va-nen-color-background', title: 'Màu sắc & Dải màu Gradient' },
+      { courseId: 'js', slug: 'su-kien-event-listener', title: 'Sự kiện (addEventListener)' },
+    ],
+    createdOrder: 1,
+    iconKey: 'sparkles',
     htmlCode: DEFAULT_HTML_PART,
     cssCode: DEFAULT_CSS_PART,
     jsCode: DEFAULT_JS_PART,
@@ -202,6 +229,21 @@ export const CODE_TEMPLATES: CodeTemplate[] = [
     name: 'Ứng dụng To-Do List',
     description: 'Ứng dụng quản lý công việc có thể thêm, đánh dấu hoàn thành và xóa',
     badge: 'Ứng dụng',
+    category: 'Ứng dụng nhỏ',
+    difficulty: 'Trung bình',
+    tags: ['todo', 'cong viec', 'danh sach', 'ung dung', 'crud'],
+    learningPoints: [
+      'Quản lý mảng dữ liệu công việc và vẽ lại danh sách DOM',
+      'Ủy quyền sự kiện (Event Delegation) trên thẻ ul để đánh dấu và xóa',
+      'Lọc công việc còn lại và dọn dẹp mục đã hoàn thành',
+    ],
+    relatedLessons: [
+      { courseId: 'js', slug: 'du-an-nho-todo-list', title: 'Dự án nhỏ: Danh sách việc cần làm' },
+      { courseId: 'js', slug: 'mang-array', title: 'Mảng (Array) & filter' },
+      { courseId: 'css', slug: 'flexbox-bo-cuc-linh-hoat', title: 'Flexbox: Bố cục linh hoạt' },
+    ],
+    createdOrder: 2,
+    iconKey: 'check',
     htmlCode: `<div class="todo-app">
   <h2>📝 Công Việc Cần Làm</h2>
   <p class="sub">Nhập công việc và nhấn Thêm để lưu lại</p>
@@ -307,6 +349,20 @@ render();`,
     name: 'Thẻ 3D Hiệu Ứng Nghiêng',
     description: 'Thẻ kính 3D với hiệu ứng nghiêng theo con trỏ chuột và viền phát sáng',
     badge: 'Hiệu ứng',
+    category: 'Hiệu ứng & Canvas',
+    difficulty: 'Trung bình',
+    tags: ['3d', 'hologram', 'nghieng', 'perspective', 'hieu ung'],
+    learningPoints: [
+      'Sử dụng perspective và transform-style: preserve-3d để tạo chiều sâu',
+      'Tính góc xoay rotateX, rotateY theo tọa độ con trỏ chuột',
+      'Tách lớp phần tử bằng translateZ giúp chữ nổi bật trên nền thẻ',
+    ],
+    relatedLessons: [
+      { courseId: 'css', slug: 'hieu-ung-transition-transform-animation', title: 'Chuyển động & Transform' },
+      { courseId: 'js', slug: 'su-kien-event-listener', title: 'Sự kiện di chuyển chuột' },
+    ],
+    createdOrder: 3,
+    iconKey: 'layers',
     htmlCode: `<div class="card-wrap">
   <div class="card" id="tilt-card">
     <div class="glow"></div>
@@ -426,6 +482,20 @@ console.log('Hiệu ứng 3D đã sẵn sàng. Di chuyển chuột trên khung x
     name: 'Pháo Hoa Canvas Tương Tác',
     description: 'Bắn pháo hoa rực rỡ và hạt ánh sáng khi nhấp chuột trên màn hình Canvas',
     badge: 'Canvas',
+    category: 'Hiệu ứng & Canvas',
+    difficulty: 'Nâng cao',
+    tags: ['canvas', 'phao hoa', 'hat anh sang', 'requestAnimationFrame', 'do hoa'],
+    learningPoints: [
+      'Khởi tạo phần tử Canvas tự khớp kích thước khung nhìn',
+      'Mô phỏng vận tốc, ma sát và trọng lực cho hệ thống hạt (Particle)',
+      'Tạo vòng lặp hoạt họa 60 FPS với requestAnimationFrame',
+    ],
+    relatedLessons: [
+      { courseId: 'js', slug: 'doi-tuong-object', title: 'Đối tượng (Object) & Lớp' },
+      { courseId: 'js', slug: 'vong-lap-for-while', title: 'Vòng lặp trong JavaScript' },
+    ],
+    createdOrder: 4,
+    iconKey: 'flame',
     htmlCode: `<div class="hint">✨ Nhấp chuột bất kỳ đâu để bắn pháo hoa</div>
 <canvas id="canvas"></canvas>`,
     cssCode: `* { margin: 0; padding: 0; box-sizing: border-box; }
@@ -526,3 +596,30 @@ function animate() {
 animate();`,
   },
 ];
+
+export const CODE_TEMPLATES: CodeTemplate[] = [
+  ...CORE_TEMPLATES,
+  ...BATCH_1_WEBSITE_TEMPLATES,
+  ...BATCH_2_TEMPLATES,
+];
+
+export function hasTemplateHtml(template: CodeTemplate): boolean {
+  return Boolean(template.htmlCode?.trim());
+}
+
+export function hasTemplateCss(template: CodeTemplate): boolean {
+  return Boolean(template.cssCode?.trim());
+}
+
+export function hasTemplateJs(template: CodeTemplate): boolean {
+  return Boolean(template.jsCode?.trim());
+}
+
+export function isTemplateHtmlOnly(template: CodeTemplate): boolean {
+  return hasTemplateHtml(template) && !hasTemplateCss(template) && !hasTemplateJs(template);
+}
+
+export function getTemplateLineCount(template: CodeTemplate): number {
+  const count = (s?: string) => (s && s.trim().length > 0 ? s.split('\n').length : 0);
+  return count(template.htmlCode) + count(template.cssCode) + count(template.jsCode);
+}

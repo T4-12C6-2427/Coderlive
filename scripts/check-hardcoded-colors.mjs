@@ -25,6 +25,12 @@ const ALLOWLIST_FILES = new Set([
 // Patterns for disallowed hardcoded Tailwind palette classes in TSX/TS files
 const TAILWIND_PALETTE_REGEX = /\b(bg|text|border|ring|shadow|from|via|to)-(slate|zinc|neutral|stone|gray|indigo|violet|purple|fuchsia|pink)-(100|200|300|400|500|600|700|800|900|950)\b/g;
 
+const TEMPLATES_DIR = path.resolve(SRC_DIR, 'constants/templates');
+
+function isAllowlistedFile(filePath) {
+  return ALLOWLIST_FILES.has(filePath) || filePath.startsWith(`${TEMPLATES_DIR}${path.sep}`);
+}
+
 function getFiles(dir) {
   const dirents = fs.readdirSync(dir, { withFileTypes: true });
   const files = dirents.flatMap((dirent) => {
@@ -36,7 +42,7 @@ function getFiles(dir) {
 
 function runCheck() {
   const allFiles = getFiles(SRC_DIR).filter(
-    (f) => (f.endsWith('.tsx') || f.endsWith('.ts')) && !ALLOWLIST_FILES.has(f)
+    (f) => (f.endsWith('.tsx') || f.endsWith('.ts')) && !isAllowlistedFile(f)
   );
 
   let totalViolations = 0;

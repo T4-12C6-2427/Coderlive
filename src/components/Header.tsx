@@ -31,7 +31,9 @@ import {
   Search,
   Cloud,
   Users,
-  Lock
+  Lock,
+  Inbox,
+  KeyRound,
 } from 'lucide-react';
 import {
   LayoutMode,
@@ -70,6 +72,7 @@ export interface HeaderProps {
   theme: ThemeMode;
   onToggleTheme: () => void;
   onSelectTemplate: (template: CodeTemplate) => void;
+  onOpenTemplates?: () => void;
   isCopied: boolean;
   isCodeEmpty?: boolean;
   activeTemplateId?: string;
@@ -117,6 +120,10 @@ export interface HeaderProps {
   canEditTitle?: boolean;
   onOpenCollabInvite?: () => void;
   onOpenCollabMembers?: () => void;
+  pendingJoinRequestsCount?: number;
+  pendingUserInvitesCount?: number;
+  onOpenUserInvites?: () => void;
+  onOpenJoinByCode?: () => void;
   // Stage 3 & 4 Presence, Privacy & People Panel props
   collabProject?: CollabProject | null;
   onlineUsers?: PresenceUser[];
@@ -141,6 +148,7 @@ export const Header: React.FC<HeaderProps> = ({
   theme,
   onToggleTheme,
   onSelectTemplate,
+  onOpenTemplates,
   isCopied,
   isCodeEmpty = false,
   activeTemplateId,
@@ -174,6 +182,10 @@ export const Header: React.FC<HeaderProps> = ({
   canEditTitle = true,
   onOpenCollabInvite,
   onOpenCollabMembers,
+  pendingJoinRequestsCount = 0,
+  pendingUserInvitesCount = 0,
+  onOpenUserInvites,
+  onOpenJoinByCode,
   collabProject = null,
   onlineUsers: onlineUsersProp,
   followingUid = null,
@@ -517,6 +529,11 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       <UserPlus className="w-2.5 h-2.5 text-accent" strokeWidth={1.5} />
                       <span>Mời</span>
+                      {pendingJoinRequestsCount > 0 && (
+                        <span className="ml-0.5 px-1 rounded-full bg-accent text-[var(--accent-contrast)] font-mono text-[9px] tabular-nums leading-tight">
+                          {pendingJoinRequestsCount}
+                        </span>
+                      )}
                     </button>
                   )}
 
@@ -666,9 +683,13 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     ref={userBtnRef}
                     onClick={toggleUserDropdown}
-                    className="touch-target w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--border-subtle)] hover:bg-[var(--border-default)] border border-default flex items-center justify-center transition-all cursor-pointer flex-shrink-0 overflow-hidden"
+                    className="relative touch-target w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--border-subtle)] hover:bg-[var(--border-default)] border border-default flex items-center justify-center transition-all cursor-pointer flex-shrink-0"
                     title={isTouch ? undefined : identity.displayLabel}
-                    aria-label="Tài khoản người dùng"
+                    aria-label={
+                      pendingUserInvitesCount > 0
+                        ? `Tài khoản người dùng (${pendingUserInvitesCount} lời mời dự án)`
+                        : 'Tài khoản người dùng'
+                    }
                   >
                     {showPhoto ? (
                       <img
@@ -682,6 +703,14 @@ export const Header: React.FC<HeaderProps> = ({
                       <div className="w-5 h-5 rounded-full bg-accent text-accent-on flex items-center justify-center text-[10px] font-bold">
                         {initialChar || <UserIcon className="w-3 h-3" strokeWidth={1.5} />}
                       </div>
+                    )}
+                    {pendingUserInvitesCount > 0 && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-accent text-accent-on text-[9px] font-bold leading-none flex items-center justify-center border border-elevated tabular-nums"
+                      >
+                        {pendingUserInvitesCount > 9 ? '9+' : pendingUserInvitesCount}
+                      </span>
                     )}
                   </button>
                 );
@@ -737,11 +766,18 @@ export const Header: React.FC<HeaderProps> = ({
                       setShowMoreDropdown(false);
                       onOpenCollabInvite();
                     }}
-                    className="touch-target-h w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] text-secondary hover:text-primary hover:bg-[var(--border-subtle)] flex items-center gap-2 transition-colors cursor-pointer"
+                    className="touch-target-h w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] text-secondary hover:text-primary hover:bg-[var(--border-subtle)] flex items-center justify-between transition-colors cursor-pointer"
                     role="menuitem"
                   >
-                    <UserPlus className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
-                    <span>Mời thành viên</span>
+                    <div className="flex items-center gap-2">
+                      <UserPlus className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
+                      <span>Mời thành viên</span>
+                    </div>
+                    {pendingJoinRequestsCount > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-accent-soft text-accent font-mono tabular-nums">
+                        {pendingJoinRequestsCount}
+                      </span>
+                    )}
                   </button>
                 )}
                 {onOpenCollabMembers && (
@@ -816,7 +852,23 @@ export const Header: React.FC<HeaderProps> = ({
 
               {showTemplateSubmenu && (
                 <div className="p-1 my-1 bg-panel rounded-[var(--radius-sm)] border border-default space-y-0.5">
-                  {CODE_TEMPLATES.map((tmpl) => (
+                  {onOpenTemplates && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMoreDropdown(false);
+                        setShowTemplateSubmenu(false);
+                        onOpenTemplates();
+                      }}
+                      className="touch-target-h w-full text-left px-2 py-1.5 rounded-[var(--radius-xs)] text-xs font-semibold text-accent hover:bg-accent-soft transition-colors flex items-center justify-between cursor-pointer"
+                    >
+                      <span>Mở thư viện mẫu...</span>
+                      <span className="text-[10px] font-mono tabular-nums">
+                        {CODE_TEMPLATES.length}
+                      </span>
+                    </button>
+                  )}
+                  {CODE_TEMPLATES.slice(0, 4).map((tmpl) => (
                     <button
                       key={tmpl.id}
                       onClick={() => {
@@ -1113,6 +1165,27 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>Thông tin hồ sơ</span>
               </button>
 
+              {onOpenUserInvites && (
+                <button
+                  onClick={() => {
+                    setShowUserDropdown(false);
+                    onOpenUserInvites();
+                  }}
+                  className="touch-target-h w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] text-secondary hover:text-primary hover:bg-[var(--border-subtle)] flex items-center justify-between gap-2 transition-colors cursor-pointer"
+                  role="menuitem"
+                >
+                  <div className="flex items-center gap-2">
+                    <Inbox className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
+                    <span>Lời mời dự án</span>
+                  </div>
+                  {pendingUserInvitesCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-accent text-accent-on font-semibold font-mono tabular-nums">
+                      {pendingUserInvitesCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
               <button
                 onClick={() => {
                   setShowUserDropdown(false);
@@ -1124,6 +1197,20 @@ export const Header: React.FC<HeaderProps> = ({
                 <FolderGit2 className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
                 <span>Dự án của tôi ({projectCount})</span>
               </button>
+
+              {onOpenJoinByCode && (
+                <button
+                  onClick={() => {
+                    setShowUserDropdown(false);
+                    onOpenJoinByCode();
+                  }}
+                  className="touch-target-h w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] text-secondary hover:text-primary hover:bg-[var(--border-subtle)] flex items-center gap-2 transition-colors cursor-pointer"
+                  role="menuitem"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
+                  <span>Tham gia bằng mã</span>
+                </button>
+              )}
 
               {onOpenCloudDiagnostic && (
                 <button

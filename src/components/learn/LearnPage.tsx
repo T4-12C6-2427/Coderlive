@@ -36,6 +36,7 @@ interface LearnPageProps {
   onOpenInEditor: (code: string) => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
+  initialTarget?: { courseId: CourseId; slug: string; nonce: number } | null;
 }
 
 export const LearnPage: React.FC<LearnPageProps> = ({
@@ -43,12 +44,14 @@ export const LearnPage: React.FC<LearnPageProps> = ({
   onOpenInEditor,
   theme,
   onToggleTheme,
+  initialTarget = null,
 }) => {
   const { currentUser } = useAuth();
   const isTouch = useIsTouch();
 
   // Active Course state (persisted)
   const [activeCourseId, setActiveCourseId] = useState<CourseId>(() => {
+    if (initialTarget?.courseId) return initialTarget.courseId;
     const saved = localStorage.getItem('coderlive_active_course');
     return (saved as CourseId) || 'html';
   });
@@ -57,6 +60,8 @@ export const LearnPage: React.FC<LearnPageProps> = ({
   const [activeTab, setActiveTab] = useState<'lessons' | 'cheatSheet'>('lessons');
   const [activeLessonId, setActiveLessonId] = useState<number | string>(1);
   const [completedLessonIds, setCompletedLessonIds] = useState<(number | string)[]>([]);
+  const pendingTargetRef = useRef<{ courseId: CourseId; slug: string } | null>(null);
+  const lastTargetNonceRef = useRef<number>(0);
 
   // Track progress counts for all courses to show in dropdown
   const [htmlCompletedCount, setHtmlCompletedCount] = useState<number>(0);
@@ -121,8 +126,35 @@ export const LearnPage: React.FC<LearnPageProps> = ({
     });
   }, [currentUser, activeCourseId]);
 
-  // Load or restore active lesson when course changes
+  // Handle explicit lesson jump requests from Templates or external callers
   useEffect(() => {
+    if (!initialTarget || initialTarget.nonce === lastTargetNonceRef.current) return;
+    lastTargetNonceRef.current = initialTarget.nonce;
+    pendingTargetRef.current = {
+      courseId: initialTarget.courseId,
+      slug: initialTarget.slug,
+    };
+    setActiveTab('lessons');
+    if (activeCourseId !== initialTarget.courseId) {
+      setActiveCourseId(initialTarget.courseId);
+    }
+  }, [initialTarget, activeCourseId]);
+
+  // Load or restore active lesson when course changes (or resolve pending deep link)
+  useEffect(() => {
+    if (
+      pendingTargetRef.current &&
+      pendingTargetRef.current.courseId === activeCourseId
+    ) {
+      const targetSlug = pendingTargetRef.current.slug;
+      const targetLesson = currentLessons.find((l) => l.slug === targetSlug);
+      pendingTargetRef.current = null;
+      if (targetLesson) {
+        setActiveLessonId(targetLesson.id);
+        return;
+      }
+    }
+
     const savedLesson = localStorage.getItem(`coderlive_last_lesson_${activeCourseId}`);
     if (savedLesson) {
       const found = currentLessons.find((l) => String(l.id) === savedLesson);
@@ -136,7 +168,7 @@ export const LearnPage: React.FC<LearnPageProps> = ({
     if (firstLesson) {
       setActiveLessonId(firstLesson.id);
     }
-  }, [activeCourseId, currentLessons]);
+  }, [activeCourseId, currentLessons, initialTarget]);
 
   // Persist current lesson position
   useEffect(() => {
