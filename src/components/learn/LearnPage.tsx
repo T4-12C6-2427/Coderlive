@@ -33,18 +33,30 @@ import { useIsTouch } from '../../hooks/useViewport';
 
 interface LearnPageProps {
   onBackToEditor: () => void;
+  onGoHome?: () => void;
   onOpenInEditor: (code: string) => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   initialTarget?: { courseId: CourseId; slug: string; nonce: number } | null;
+  cheatSheetTarget?: { courseId: CourseId; entryId: string; nonce: number } | null;
+  closeMenusNonce?: number;
+  onRouteStateChange?: (info: {
+    courseId: CourseId;
+    tab: 'lessons' | 'cheatSheet';
+    lessonSlug?: string;
+  }) => void;
 }
 
 export const LearnPage: React.FC<LearnPageProps> = ({
   onBackToEditor,
+  onGoHome,
   onOpenInEditor,
   theme,
   onToggleTheme,
   initialTarget = null,
+  cheatSheetTarget = null,
+  closeMenusNonce = 0,
+  onRouteStateChange,
 }) => {
   const { currentUser } = useAuth();
   const isTouch = useIsTouch();
@@ -139,6 +151,20 @@ export const LearnPage: React.FC<LearnPageProps> = ({
       setActiveCourseId(initialTarget.courseId);
     }
   }, [initialTarget, activeCourseId]);
+
+  const lastCheatTargetNonceRef = useRef<number>(0);
+  useEffect(() => {
+    if (!cheatSheetTarget || cheatSheetTarget.nonce === lastCheatTargetNonceRef.current) return;
+    lastCheatTargetNonceRef.current = cheatSheetTarget.nonce;
+    setActiveCourseId(cheatSheetTarget.courseId);
+    setActiveTab('cheatSheet');
+  }, [cheatSheetTarget]);
+
+  useEffect(() => {
+    if (closeMenusNonce > 0) {
+      setShowCourseSelector(false);
+    }
+  }, [closeMenusNonce]);
 
   // Load or restore active lesson when course changes (or resolve pending deep link)
   useEffect(() => {
@@ -238,12 +264,46 @@ export const LearnPage: React.FC<LearnPageProps> = ({
   const prevLesson = currentIdx > 0 ? currentLessons[currentIdx - 1] : undefined;
   const nextLesson = currentIdx < currentLessons.length - 1 ? currentLessons[currentIdx + 1] : undefined;
 
+  useEffect(() => {
+    onRouteStateChange?.({
+      courseId: activeCourseId,
+      tab: activeTab,
+      lessonSlug: currentLesson?.slug,
+    });
+  }, [activeCourseId, activeTab, currentLesson?.slug, onRouteStateChange]);
+
   return (
     <div className="h-full w-full flex flex-col overflow-hidden select-none bg-transparent text-primary font-sans transition-colors">
       {/* Learn Header Bar (Slim 48px on desktop, safe-area & touch-aware on mobile) */}
       <header className="pt-safe pl-[max(0.75rem,var(--safe-left))] pr-[max(0.75rem,var(--safe-right))] sm:pl-[max(1rem,var(--safe-left))] sm:pr-[max(1rem,var(--safe-right))] min-h-[calc(48px+var(--safe-top))] bg-elevated border-b border-subtle flex items-center justify-between gap-2 sm:gap-3 flex-shrink-0 z-20 whitespace-nowrap overflow-x-hidden">
-        {/* Left: Back button + Course Selector Trigger */}
+        {/* Left: Coderlive Logo + Back button + Course Selector Trigger */}
         <div className="touch-gap flex items-center gap-2 sm:gap-3 min-w-0">
+          <a
+            href="#/"
+            aria-label="Về trang chính"
+            title={isTouch ? undefined : 'Về trang chính'}
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+                return;
+              }
+              e.preventDefault();
+              (onGoHome || onBackToEditor)();
+            }}
+            className="flex items-center gap-2 flex-shrink-0 cursor-pointer rounded-[var(--radius-sm)] px-1 py-0.5 -ml-1 hover:bg-[var(--border-subtle)] active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-base)]"
+          >
+            <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-accent text-accent-on flex items-center justify-center shadow-xs">
+              <Code2 className="w-4 h-4 text-accent-on" strokeWidth={1.5} />
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
+              <span className="font-semibold text-xs tracking-tight text-primary">
+                Coderlive
+              </span>
+              <span className="text-[9px] font-mono font-semibold tracking-wider uppercase px-1.5 py-0.2 rounded-full bg-accent-soft text-accent border border-[var(--accent-base)]/25">
+                PRO
+              </span>
+            </div>
+          </a>
+
           <button
             onClick={onBackToEditor}
             className="touch-target h-7 px-2.5 text-xs font-medium text-secondary hover:text-primary bg-elevated hover:bg-[var(--border-subtle)] rounded-[var(--radius-sm)] border border-default transition-all flex-shrink-0 flex items-center justify-center gap-1.5 cursor-pointer outline-none"
@@ -383,6 +443,13 @@ export const LearnPage: React.FC<LearnPageProps> = ({
               <CheatSheet
                 course={activeCourseId === 'js' ? 'js' : activeCourseId === 'css' ? 'css' : 'html'}
                 onOpenInEditor={onOpenInEditor}
+                targetEntryId={
+                  cheatSheetTarget && cheatSheetTarget.courseId === activeCourseId
+                    ? cheatSheetTarget.entryId
+                    : null
+                }
+                targetNonce={cheatSheetTarget?.nonce}
+                closeModalNonce={closeMenusNonce}
               />
             </div>
           )}

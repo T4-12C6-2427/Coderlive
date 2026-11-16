@@ -24,9 +24,18 @@ import { useIsTouch } from '../../hooks/useViewport';
 interface CheatSheetProps {
   course: 'html' | 'css' | 'js';
   onOpenInEditor?: (code: string) => void;
+  targetEntryId?: string | null;
+  targetNonce?: number;
+  closeModalNonce?: number;
 }
 
-export const CheatSheet: React.FC<CheatSheetProps> = ({ course, onOpenInEditor }) => {
+export const CheatSheet: React.FC<CheatSheetProps> = ({
+  course,
+  onOpenInEditor,
+  targetEntryId = null,
+  targetNonce = 0,
+  closeModalNonce = 0,
+}) => {
   const isTouch = useIsTouch();
   // Load data source based on course
   const entries: CheatEntry[] = useMemo(() => {
@@ -102,20 +111,40 @@ export const CheatSheet: React.FC<CheatSheetProps> = ({ course, onOpenInEditor }
     localStorage.setItem(`coderlive_cheatsheet_${course}_search`, searchQuery);
   }, [searchQuery, course]);
 
-  // Support deep links like #tra-cuu/js/let or #tra-cuu/html/head
+  // Support deep links like #tra-cuu/js/let or #tra-cuu/html/head and explicit target props
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash && hash.startsWith('#tra-cuu/')) {
-      const parts = hash.replace('#tra-cuu/', '').split('/');
-      const [hashCourse, hashId] = parts;
-      if (hashCourse === course && hashId) {
-        const found = entries.find((e) => e.id.toLowerCase() === hashId.toLowerCase());
-        if (found) {
-          setActiveModalEntry(found);
+    const syncFromHash = () => {
+      const hash = window.location.hash;
+      if (hash && hash.startsWith('#tra-cuu/')) {
+        const parts = hash.replace('#tra-cuu/', '').split('/');
+        const [hashCourse, hashId] = parts;
+        if (hashCourse === course && hashId) {
+          const found = entries.find((e) => e.id.toLowerCase() === hashId.toLowerCase());
+          if (found) {
+            setActiveModalEntry(found);
+          }
         }
       }
-    }
+    };
+
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
   }, [course, entries]);
+
+  useEffect(() => {
+    if (!targetEntryId) return;
+    const found = entries.find((e) => e.id.toLowerCase() === targetEntryId.toLowerCase());
+    if (found) {
+      setActiveModalEntry(found);
+    }
+  }, [targetEntryId, targetNonce, entries]);
+
+  useEffect(() => {
+    if (closeModalNonce > 0) {
+      setActiveModalEntry(null);
+    }
+  }, [closeModalNonce]);
 
   // Filter entries
   const filteredEntries = useMemo(() => {

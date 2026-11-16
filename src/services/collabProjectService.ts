@@ -47,7 +47,7 @@ import { getAccountIdentity, maskEmail } from '../lib/usernameAuth';
 const PENDING_INVITE_STORAGE_KEY = 'coderlive_pending_collab_invite_v1';
 
 export interface PendingCollabInvite {
-  projectId: string;
+  projectId?: string;
   token: string;
 }
 
@@ -67,8 +67,11 @@ export function getPendingCollabInvite(): PendingCollabInvite | null {
     const raw = sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed?.projectId && parsed?.token) {
-      return { projectId: String(parsed.projectId), token: String(parsed.token) };
+    if (parsed?.token) {
+      return {
+        projectId: parsed.projectId ? String(parsed.projectId) : '',
+        token: String(parsed.token),
+      };
     }
     return null;
   } catch {
@@ -590,27 +593,14 @@ export async function updateCollabInviteSettings(
  * - Nếu dự án bật "Chủ dự án phải chấp nhận": tạo yêu cầu chờ duyệt giống luồng mã 4 chữ số
  */
 export async function joinCollabProjectByInvite(
-  projectId: string,
+  rawProjectId: string,
   inviteToken: string,
   user: User
 ): Promise<JoinCollabResult> {
   if (!db) throw new Error('Cơ sở dữ liệu Firestore chưa sẵn sàng');
   const now = new Date().toISOString();
 
-  // 1. Nếu người dùng đã là thành viên rồi thì trả về luôn dự án
-  try {
-    const existingSnap = await getDoc(doc(db, 'collabProjects', projectId));
-    if (existingSnap.exists()) {
-      const existingData = normalizeCollabProject(existingSnap.id, existingSnap.data());
-      if (existingData.members[user.uid]) {
-        return { status: 'joined', project: existingData };
-      }
-    }
-  } catch {
-    // Người chưa phải thành viên sẽ bị từ chối getDoc theo rules -> tiếp tục luồng tham gia bằng token
-  }
-
-  // 2. Tra cứu thông tin lời mời qua token bí mật
+  // 1. Tra cứu thông tin lời mời qua token bí mật trước (hỗ trợ cả #/join/<token> chưa có projectId)
   const inviteRef = doc(db, 'collabInvites', inviteToken);
   let inviteSnap;
   try {
@@ -624,9 +614,27 @@ export async function joinCollabProjectByInvite(
   }
 
   const inviteData = inviteSnap.data();
-  if (inviteData.projectId !== projectId) {
+  const projectId = rawProjectId || (typeof inviteData.projectId === 'string' ? inviteData.projectId : '');
+  if (!projectId) {
+    throw new Error('Liên kết mời không hợp lệ.');
+  }
+  if (rawProjectId && inviteData.projectId !== rawProjectId) {
     throw new Error('Liên kết mời không khớp với dự án này.');
   }
+
+  // 2. Nếu người dùng đã là thành viên rồi thì trả về luôn dự án
+  try {
+    const existingSnap = await getDoc(doc(db, 'collabProjects', projectId));
+    if (existingSnap.exists()) {
+      const existingData = normalizeCollabProject(existingSnap.id, existingSnap.data());
+      if (existingData.members[user.uid]) {
+        return { status: 'joined', project: existingData };
+      }
+    }
+  } catch {
+    // Người chưa phải thành viên sẽ bị từ chối getDoc theo rules -> tiếp tục luồng tham gia bằng token
+  }
+
   if (!inviteData.inviteEnabled) {
     throw new Error('Chủ sở hữu hiện đã tạm tắt lời mời cho dự án này.');
   }

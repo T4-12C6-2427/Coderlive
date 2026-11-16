@@ -275,7 +275,7 @@ export const TemplatesDrawer: React.FC<TemplatesDrawerProps> = ({
           role="tablist"
           aria-label="Danh mục mẫu"
         >
-          {(['Tất cả', ...TEMPLATE_CATEGORIES] as CategoryFilter[]).map((cat) => {
+          {TEMPLATE_CATEGORIES.map((cat) => {
             const count = categoryCounts[cat] ?? 0;
             const active = selectedCategory === cat;
             return (

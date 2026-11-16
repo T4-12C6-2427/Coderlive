@@ -22,6 +22,7 @@ import {
   Sidebar,
   Gauge,
   KeyRound,
+  Maximize2,
 } from 'lucide-react';
 import { Kbd } from './ui/Kbd';
 import { Project, WorkspacePreset } from '../types';
@@ -45,6 +46,9 @@ export interface CommandPaletteProps {
   isFpsVisible?: boolean;
   onSetWorkspacePreset: (preset: WorkspacePreset) => void;
   activePreset: WorkspacePreset;
+  expandedPane?: 'code' | 'preview' | null;
+  onToggleExpandCode?: () => void;
+  onToggleExpandPreview?: () => void;
   onToggleActivityBar: () => void;
   isActivityBarVisible: boolean;
   onOpenPersonalize: () => void;
@@ -86,6 +90,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   isFpsVisible,
   onSetWorkspacePreset,
   activePreset,
+  expandedPane = null,
+  onToggleExpandCode,
+  onToggleExpandPreview,
   onToggleActivityBar,
   isActivityBarVisible,
   onOpenPersonalize,
@@ -212,6 +219,32 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         action: () => onSetWorkspacePreset('split-vertical'),
         keywords: ['chia doc', 'vertical', 'tren duoi', 'stacked'],
       },
+      ...(onToggleExpandCode
+        ? [
+            {
+              id: 'layout-expand-code',
+              title: expandedPane === 'code' ? 'Thu nhỏ khung code' : 'Phóng to khung code',
+              category: 'layout' as const,
+              icon: <Maximize2 className="w-4 h-4 text-accent" strokeWidth={1.5} />,
+              shortcut: 'Ctrl+Alt+E',
+              action: onToggleExpandCode,
+              keywords: ['phong to', 'thu nho', 'khung code', 'editor', 'expand', 'phóng to khung code'],
+            },
+          ]
+        : []),
+      ...(onToggleExpandPreview
+        ? [
+            {
+              id: 'layout-expand-preview',
+              title: expandedPane === 'preview' ? 'Thu nhỏ khung xem trước' : 'Phóng to khung xem trước',
+              category: 'layout' as const,
+              icon: <Maximize2 className="w-4 h-4 text-accent" strokeWidth={1.5} />,
+              shortcut: 'Ctrl+Alt+P',
+              action: onToggleExpandPreview,
+              keywords: ['phong to', 'thu nho', 'khung xem truoc', 'preview', 'expand', 'phóng to khung xem trước'],
+            },
+          ]
+        : []),
       {
         id: 'layout-toggle-activity',
         title: isActivityBarVisible ? 'Ẩn thanh Activity Bar bên trái' : 'Hiện thanh Activity Bar bên trái',
@@ -339,6 +372,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onToggleFps,
     isFpsVisible,
     onSetWorkspacePreset,
+    expandedPane,
+    onToggleExpandCode,
+    onToggleExpandPreview,
     onToggleActivityBar,
     isActivityBarVisible,
     onOpenPersonalize,

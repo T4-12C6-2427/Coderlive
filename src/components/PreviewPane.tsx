@@ -16,6 +16,8 @@ import {
   Link2,
   ListChecks,
   LocateFixed,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import {
   DeviceMode,
@@ -54,6 +56,9 @@ interface PreviewPaneProps {
   syncedPreviewState?: CollabPreviewSyncState | null;
   currentUserId?: string;
   onPublishPreviewSync?: (device: DeviceMode, refreshNonce: number) => void;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+  isPreviewBodyHidden?: boolean;
 }
 
 function formatLocationLabel(
@@ -88,6 +93,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
   syncedPreviewState = null,
   currentUserId = '',
   onPublishPreviewSync,
+  isExpanded = false,
+  onToggleExpand,
+  isPreviewBodyHidden = false,
 }) => {
   const { settings } = useTheme();
   const isTouch = useIsTouch();
@@ -420,9 +428,13 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
     : null;
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden select-none relative bg-transparent text-primary">
+    <div
+      className={`flex flex-col w-full overflow-hidden select-none relative bg-transparent text-primary ${
+        isPreviewBodyHidden ? 'h-auto' : 'h-full'
+      }`}
+    >
       {/* Toast Notification on Reload */}
-      {showReloadToast && (
+      {showReloadToast && !isPreviewBodyHidden && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-full bg-elevated text-primary border border-default shadow-elevated text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150 backdrop-blur-xs pointer-events-none">
           <CheckCircle2 className="w-3.5 h-3.5 text-success" />
           <span>Đã làm mới khung xem trước</span>
@@ -430,21 +442,25 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
       )}
 
       {/* Top Preview Sub-Header Bar */}
-      <div className="min-h-[44px] sm:h-11 px-3 py-1.5 sm:py-0 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 border-b border-subtle bg-elevated text-xs z-10 min-w-0">
-        <div className="flex items-center gap-2 min-w-0">
+      <div
+        className={`min-h-[44px] sm:h-11 pl-3 pr-3 py-1.5 sm:py-0 items-center justify-between gap-2 border-b border-subtle bg-elevated text-xs z-10 min-w-0 ${
+          isPreviewBodyHidden ? 'hidden' : 'flex flex-wrap sm:flex-nowrap'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
           <div className="flex items-center gap-1.5 font-bold min-w-0">
             <Eye className="w-4 h-4 text-accent flex-shrink-0" />
             <span className="text-xs sm:text-sm tracking-tight text-primary font-semibold truncate">
               Khung xem trước
             </span>
           </div>
-          <span className="text-[11px] text-muted hidden sm:inline flex-shrink-0">
+          <span className="text-[11px] text-muted hidden xl:inline flex-shrink-0 truncate">
             (Thời gian thực)
           </span>
         </div>
 
         {/* Device Switcher & Controls */}
-        <div className="touch-gap flex items-center justify-end gap-1.5 sm:gap-2 flex-shrink-0 max-w-full overflow-x-auto no-scrollbar ml-auto">
+        <div className="touch-gap flex items-center justify-end gap-1.5 sm:gap-2 flex-shrink-0 ml-auto">
           {isCollabMode && onToggleSyncPreview && (
             <button
               type="button"
@@ -465,8 +481,8 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
               }`}
             >
               <Link2 className="w-3.5 h-3.5 flex-shrink-0" />
-              <span className="hidden lg:inline">Đồng bộ chế độ xem trước</span>
-              <span className="lg:hidden">Đồng bộ</span>
+              <span className="hidden xl:inline">Đồng bộ chế độ xem trước</span>
+              <span className="xl:hidden">Đồng bộ</span>
             </button>
           )}
 
@@ -523,12 +539,40 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
+
+          {/* Expand / Collapse Preview button */}
+          {onToggleExpand && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              aria-pressed={isExpanded}
+              aria-label={isExpanded ? 'Thu nhỏ' : 'Phóng to khung xem trước'}
+              title={
+                isTouch
+                  ? undefined
+                  : `${isExpanded ? 'Thu nhỏ' : 'Phóng to khung xem trước'} (Ctrl+Alt+P)`
+              }
+              className={`hidden sm:inline-flex items-center justify-center min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 lg:w-7 lg:h-7 rounded-[var(--radius-sm)] border transition-all cursor-pointer flex-shrink-0 shadow-xs focus-visible:ring-2 focus-visible:ring-[var(--accent-base)] focus-visible:outline-none ${
+                isExpanded
+                  ? 'bg-accent-soft text-accent border-[var(--accent-base)]/40'
+                  : 'border-default bg-panel hover:bg-elevated text-secondary hover:text-primary'
+              }`}
+            >
+              {isExpanded ? (
+                <Minimize2 className="w-3.5 h-3.5" />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Main Preview Container Area */}
       <div
-        className={`flex-1 min-h-0 relative overflow-auto overscroll-contain flex items-center justify-center p-2 sm:p-4 transition-colors ${getCanvasBgClass()}`}
+        className={`flex-1 min-h-0 relative overflow-auto overscroll-contain items-center justify-center p-2 sm:p-4 transition-colors ${getCanvasBgClass()} ${
+          isPreviewBodyHidden ? 'hidden' : 'flex'
+        }`}
       >
         <div
           className="transition-all duration-300 overflow-hidden relative flex flex-col bg-white"

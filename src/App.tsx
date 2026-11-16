@@ -502,6 +502,27 @@ export default function App() {
   const [isTemplatesDrawerOpen, setIsTemplatesDrawerOpen] = useState(false);
   const [isPersonalizeOpen, setIsPersonalizeOpen] = useState(false);
 
+  // Ephemeral pane expand state (never persisted across refresh)
+  const [expandedPane, setExpandedPane] = useState<'code' | 'preview' | null>(null);
+  const expandedPaneRef = useRef<'code' | 'preview' | null>(null);
+  expandedPaneRef.current = expandedPane;
+  const [editorFocusNonce, setEditorFocusNonce] = useState<number>(0);
+  const [closeMenusNonce, setCloseMenusNonce] = useState<number>(0);
+  const [hasMountedLearn, setHasMountedLearn] = useState<boolean>(false);
+  const [cheatSheetTarget, setCheatSheetTarget] = useState<{
+    courseId: CourseId;
+    entryId: string;
+    nonce: number;
+  } | null>(null);
+  const isApplyingHashRouteRef = useRef<boolean>(false);
+  const learnRouteHashRef = useRef<string>('#/learn');
+
+  useEffect(() => {
+    if (isLearningOpen) {
+      setHasMountedLearn(true);
+    }
+  }, [isLearningOpen]);
+
   // Hydrate workspace view state when user changes
   useEffect(() => {
     if (authLoading) return;
@@ -532,6 +553,7 @@ export default function App() {
   ]);
 
   const handleSetWorkspacePreset = useCallback((preset: WorkspacePreset) => {
+    setExpandedPane(null);
     if (preset === 'split-vertical') {
       setLayout('vertical');
       setLastSplitPreset('split-vertical');
@@ -543,6 +565,69 @@ export default function App() {
     }
   }, []);
 
+  const handleToggleExpandCode = useCallback(() => {
+    setExpandedPane((prev) => (prev === 'code' ? null : 'code'));
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setMobileTab('code');
+    }
+    setEditorFocusNonce((n) => n + 1);
+  }, []);
+
+  const handleToggleExpandPreview = useCallback(() => {
+    setExpandedPane((prev) => {
+      const next = prev === 'preview' ? null : 'preview';
+      if (next === null) {
+        setEditorFocusNonce((n) => n + 1);
+      }
+      return next;
+    });
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setMobileTab('preview');
+    }
+  }, []);
+
+  const handleGoHome = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const currentHash = window.location.hash;
+      const baseHref = `${window.location.pathname}${window.location.search}`;
+      if (currentHash && currentHash !== '#/' && currentHash !== '#') {
+        window.history.pushState(null, '', `${baseHref}#/`);
+      } else if (!currentHash || currentHash === '#') {
+        window.history.replaceState(null, '', `${baseHref}#/`);
+      }
+    }
+
+    setIsCommandPaletteOpen(false);
+    setIsTemplatesDrawerOpen(false);
+    setPreviewingTemplate(null);
+    setPendingTemplate(null);
+    setIsPersonalizeOpen(false);
+    setIsProjectsPanelOpen(false);
+    setIsProjectModalOpen(false);
+    setIsSavingScratchToNewProject(false);
+    setEditingProject(null);
+    setEditingCollabProject(null);
+    setIsClearModalOpen(false);
+    setIsAuthModalOpen(false);
+    setIsDownloadModalOpen(false);
+    setIsGuestPromptOpen(false);
+    setIsShareModalOpen(false);
+    setIsCloudDiagnosticOpen(false);
+    setInviteModalProjectId(null);
+    setMembersModalProjectId(null);
+    setIsJoinByCodeModalOpen(false);
+    setPendingJoinWaitState(null);
+    setIsUserInvitesModalOpen(false);
+    setIsConfirmRemoveTabOpen(false);
+    setPendingRemoveLang(null);
+    setPendingRemovePersonalAfterConvert(null);
+    setExpandedPane(null);
+    setIsLearningOpen(false);
+    setMobileTab('code');
+    setCloseMenusNonce((n) => n + 1);
+    setEditorFocusNonce((n) => n + 1);
+  }, []);
+
   const handleToggleActivityBar = useCallback(() => {
     setIsActivityBarVisible((prev) => {
       const next = !prev;
@@ -551,24 +636,63 @@ export default function App() {
     });
   }, []);
 
-  // Global Keyboard shortcuts: Ctrl/Cmd+K (Command Palette), Ctrl+Alt+N (New Project)
+  // Global Keyboard shortcuts: Ctrl/Cmd+K (Command Palette), Ctrl+Alt+N (New Project), Ctrl+Alt+E/P (Expand panes), Esc (Collapse pane)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === 'n') {
+      if ((e.metaKey || e.ctrlKey) && e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'n') {
+          e.preventDefault();
+          handleOpenNewProjectModal();
+          return;
+        }
+        if (k === 'e' && !isLearningOpen) {
+          e.preventDefault();
+          handleToggleExpandCode();
+          return;
+        }
+        if (k === 'p' && !isLearningOpen) {
+          e.preventDefault();
+          handleToggleExpandPreview();
+          return;
+        }
+      }
+      if (
+        e.key === 'Escape' &&
+        !e.defaultPrevented &&
+        expandedPaneRef.current !== null &&
+        !isLearningOpen &&
+        !isCommandPaletteOpen &&
+        !isProjectsPanelOpen &&
+        !isTemplatesDrawerOpen &&
+        !isPersonalizeOpen &&
+        !document.querySelector('[role="dialog"]') &&
+        !document.querySelector('[role="menu"]') &&
+        !document.querySelector('.cm-search')
+      ) {
         e.preventDefault();
-        handleOpenNewProjectModal();
-        return;
+        setExpandedPane(null);
+        setEditorFocusNonce((n) => n + 1);
       }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [handleOpenNewProjectModal]);
+  }, [
+    handleOpenNewProjectModal,
+    handleToggleExpandCode,
+    handleToggleExpandPreview,
+    isLearningOpen,
+    isCommandPaletteOpen,
+    isProjectsPanelOpen,
+    isTemplatesDrawerOpen,
+    isPersonalizeOpen,
+  ]);
 
   // Track previous user to detect guest-to-login transitions
   const prevUserRef = useRef<string | null>(null);
@@ -1863,9 +1987,9 @@ export default function App() {
     if (!pending) return;
 
     clearPendingCollabInvite();
-    window.history.replaceState({}, '', window.location.pathname);
+    window.history.replaceState({}, '', `${window.location.pathname}#/`);
 
-    joinCollabProjectByInvite(pending.projectId, pending.token, currentUser)
+    joinCollabProjectByInvite(pending.projectId || '', pending.token, currentUser)
       .then(async (result) => {
         if (result.status === 'joined' || result.status === 'already_member') {
           await handleSelectCollabProject(result.project);
@@ -2740,6 +2864,9 @@ export default function App() {
 
     updatePreviewSnapshot(eff.html, eff.css, eff.js, isEffectiveEmpty);
     setRefreshTrigger((prev) => prev + 1);
+    if (expandedPaneRef.current === 'code') {
+      showToast('Đã chạy. Thu nhỏ khung code để xem kết quả.', 'info');
+    }
     if (isEffectiveEmpty) {
       setConsoleMessages([]);
       return;
@@ -2752,7 +2879,7 @@ export default function App() {
         time: new Date().toLocaleTimeString('vi-VN'),
       },
     ]);
-  }, [getLiveCodes, activeLanguages, runHiddenTabs, updatePreviewSnapshot]);
+  }, [getLiveCodes, activeLanguages, runHiddenTabs, updatePreviewSnapshot, showToast]);
 
   // Clear code
   const handleConfirmClear = useCallback(() => {
@@ -2798,6 +2925,7 @@ export default function App() {
 
   // Toggle layout
   const handleToggleLayout = useCallback(() => {
+    setExpandedPane(null);
     setLayout((prev) => (prev === 'horizontal' ? 'vertical' : 'horizontal'));
   }, []);
 
@@ -3197,6 +3325,243 @@ export default function App() {
     setIsJoinByCodeModalOpen(true);
   }, [currentUser, openAuth, showToast]);
 
+  const handleLearnRouteStateChange = useCallback(
+    (info: { courseId: CourseId; tab: 'lessons' | 'cheatSheet'; lessonSlug?: string }) => {
+      const nextHash =
+        info.tab === 'cheatSheet'
+          ? window.location.hash.startsWith('#tra-cuu/')
+            ? window.location.hash
+            : `#/learn/${info.courseId}`
+          : info.lessonSlug
+          ? `#/learn/${info.courseId}/${info.lessonSlug}`
+          : `#/learn/${info.courseId}`;
+      learnRouteHashRef.current = nextHash;
+
+      if (
+        isLearningOpen &&
+        !isApplyingHashRouteRef.current &&
+        typeof window !== 'undefined' &&
+        window.location.hash !== nextHash
+      ) {
+        const baseHref = `${window.location.pathname}${window.location.search}`;
+        window.history.replaceState(null, '', `${baseHref}${nextHash}`);
+      }
+    },
+    [isLearningOpen]
+  );
+
+  // Hash routing: support deep links & browser Back/Forward navigation
+  const applyHashRoute = useCallback(
+    (rawHash: string) => {
+      const hash = rawHash || '#/';
+      isApplyingHashRouteRef.current = true;
+      try {
+        if (hash.startsWith('#/join/')) {
+          const parts = hash.slice('#/join/'.length).split('/').filter(Boolean);
+          const parsedProjectId = parts.length >= 2 ? decodeURIComponent(parts[0]) : '';
+          const parsedToken =
+            parts.length >= 2
+              ? decodeURIComponent(parts[1])
+              : parts[0]
+              ? decodeURIComponent(parts[0])
+              : '';
+          if (parsedToken) {
+            if (currentUser && !isSharedView) {
+              const baseHref = `${window.location.pathname}${window.location.search}`;
+              window.history.replaceState(null, '', `${baseHref}#/`);
+              joinCollabProjectByInvite(parsedProjectId, parsedToken, currentUser)
+                .then(async (result) => {
+                  if (result.status === 'joined' || result.status === 'already_member') {
+                    await handleSelectCollabProject(result.project);
+                    showToast(`Đã mở dự án nhóm "${result.project.title}"`);
+                  } else {
+                    setPendingJoinWaitState({
+                      projectId: result.projectId,
+                      projectTitle: result.projectTitle,
+                      requestedRole: result.requestedRole,
+                      source: result.source,
+                    });
+                    setIsJoinByCodeModalOpen(true);
+                    showToast('Đã gửi yêu cầu. Đang chờ chủ dự án chấp nhận.', 'info');
+                  }
+                })
+                .catch((err: any) => {
+                  showToast(
+                    err?.message || 'Không thể tham gia dự án nhóm qua liên kết này',
+                    'danger'
+                  );
+                });
+            } else {
+              savePendingCollabInvite({ projectId: parsedProjectId, token: parsedToken });
+              if (!authLoading) {
+                openAuth('login');
+                showToast('Vui lòng đăng nhập hoặc đăng ký để tham gia dự án nhóm', 'info');
+              }
+            }
+          }
+          return;
+        }
+
+        if (hash.startsWith('#tra-cuu/')) {
+          const parts = hash.slice('#tra-cuu/'.length).split('/').filter(Boolean);
+          const coursePart = parts[0] as CourseId | undefined;
+          const entryPart = parts[1] ? decodeURIComponent(parts[1]) : '';
+          if (coursePart === 'html' || coursePart === 'css' || coursePart === 'js') {
+            setHasMountedLearn(true);
+            setIsLearningOpen(true);
+            if (entryPart) {
+              setCheatSheetTarget({
+                courseId: coursePart,
+                entryId: entryPart,
+                nonce: Date.now() + Math.random(),
+              });
+            }
+            setIsPersonalizeOpen(false);
+            setIsProjectsPanelOpen(false);
+            setIsTemplatesDrawerOpen(false);
+            setInviteModalProjectId(null);
+          }
+          return;
+        }
+
+        if (hash === '#/learn' || hash.startsWith('#/learn/')) {
+          const parts = hash.slice('#/learn'.length).split('/').filter(Boolean);
+          const coursePart = parts[0] as CourseId | undefined;
+          const slugPart = parts[1] ? decodeURIComponent(parts[1]) : '';
+          if (
+            (coursePart === 'html' || coursePart === 'css' || coursePart === 'js') &&
+            slugPart
+          ) {
+            setLearningTarget({
+              courseId: coursePart,
+              slug: slugPart,
+              nonce: Date.now() + Math.random(),
+            });
+          }
+          setHasMountedLearn(true);
+          setIsLearningOpen(true);
+          setIsPersonalizeOpen(false);
+          setIsProjectsPanelOpen(false);
+          setIsTemplatesDrawerOpen(false);
+          setInviteModalProjectId(null);
+          return;
+        }
+
+        if (hash === '#/personalize') {
+          setIsLearningOpen(false);
+          setIsPersonalizeOpen(true);
+          setIsProjectsPanelOpen(false);
+          setIsTemplatesDrawerOpen(false);
+          setInviteModalProjectId(null);
+          return;
+        }
+
+        if (hash === '#/projects') {
+          setIsLearningOpen(false);
+          setIsProjectsPanelOpen(true);
+          setIsPersonalizeOpen(false);
+          setIsTemplatesDrawerOpen(false);
+          setInviteModalProjectId(null);
+          return;
+        }
+
+        if (hash === '#/templates') {
+          setIsLearningOpen(false);
+          setIsTemplatesDrawerOpen(true);
+          setIsPersonalizeOpen(false);
+          setIsProjectsPanelOpen(false);
+          setInviteModalProjectId(null);
+          return;
+        }
+
+        if (hash.startsWith('#/invite/')) {
+          const pid = decodeURIComponent(hash.slice('#/invite/'.length).split('/')[0] || '');
+          if (pid) {
+            setIsLearningOpen(false);
+            setInviteModalProjectId(pid);
+            setIsPersonalizeOpen(false);
+            setIsProjectsPanelOpen(false);
+            setIsTemplatesDrawerOpen(false);
+            return;
+          }
+        }
+
+        if (hash === '#/' || hash === '#' || hash === '') {
+          setIsLearningOpen(false);
+          setIsPersonalizeOpen(false);
+          setIsProjectsPanelOpen(false);
+          setIsTemplatesDrawerOpen(false);
+          setInviteModalProjectId(null);
+          setMembersModalProjectId(null);
+          setIsCommandPaletteOpen(false);
+        }
+      } finally {
+        requestAnimationFrame(() => {
+          isApplyingHashRouteRef.current = false;
+        });
+      }
+    },
+    [currentUser, authLoading, isSharedView, handleSelectCollabProject, openAuth, showToast]
+  );
+
+  const applyHashRouteRef = useRef(applyHashRoute);
+  applyHashRouteRef.current = applyHashRoute;
+
+  useEffect(() => {
+    applyHashRouteRef.current(window.location.hash);
+    const onHashOrPop = () => {
+      applyHashRouteRef.current(window.location.hash);
+    };
+    window.addEventListener('hashchange', onHashOrPop);
+    window.addEventListener('popstate', onHashOrPop);
+    return () => {
+      window.removeEventListener('hashchange', onHashOrPop);
+      window.removeEventListener('popstate', onHashOrPop);
+    };
+  }, []);
+
+  // Sync active screen/route drawer to URL hash (push on open, replace on closing via X)
+  const prevRouteHashRef = useRef<string>('');
+  useEffect(() => {
+    if (typeof window === 'undefined' || isApplyingHashRouteRef.current) return;
+    if (window.location.hash.startsWith('#/join/')) return;
+
+    let desiredHash = '#/';
+    if (isLearningOpen) {
+      desiredHash = window.location.hash.startsWith('#tra-cuu/')
+        ? window.location.hash
+        : learnRouteHashRef.current || '#/learn';
+    } else if (inviteModalProjectId) {
+      desiredHash = `#/invite/${encodeURIComponent(inviteModalProjectId)}`;
+    } else if (isPersonalizeOpen) {
+      desiredHash = '#/personalize';
+    } else if (isProjectsPanelOpen) {
+      desiredHash = '#/projects';
+    } else if (isTemplatesDrawerOpen) {
+      desiredHash = '#/templates';
+    }
+
+    const baseHref = `${window.location.pathname}${window.location.search}`;
+    const currentHash = window.location.hash || '#/';
+
+    if (currentHash !== desiredHash) {
+      if (desiredHash === '#/') {
+        window.history.replaceState(null, '', `${baseHref}#/`);
+      } else if (prevRouteHashRef.current === '#/' || prevRouteHashRef.current === '') {
+        window.history.pushState(null, '', `${baseHref}${desiredHash}`);
+      } else {
+        window.history.replaceState(null, '', `${baseHref}${desiredHash}`);
+      }
+    }
+    prevRouteHashRef.current = desiredHash;
+  }, [
+    isLearningOpen,
+    inviteModalProjectId,
+    isPersonalizeOpen,
+    isProjectsPanelOpen,
+    isTemplatesDrawerOpen,
+  ]);
+
   // Open code from learning section directly into the 3-tab editor
   const handleOpenLessonInEditor = useCallback((code: string) => {
     setActiveCollabProject(null);
@@ -3286,18 +3651,28 @@ export default function App() {
         id="app-content-wrapper"
         className="relative z-[1] bg-transparent h-viewport w-full max-w-full flex flex-col overflow-hidden text-primary font-sans transition-colors duration-200"
       >
-        {isLearningOpen ? (
-          <div className="flex-1 min-h-0 overflow-hidden">
+        {hasMountedLearn && (
+          <div className={isLearningOpen ? 'flex-1 min-h-0 overflow-hidden' : 'hidden'}>
             <LearnPage
               onBackToEditor={() => setIsLearningOpen(false)}
+              onGoHome={handleGoHome}
               onOpenInEditor={handleOpenLessonInEditor}
               theme={theme}
               onToggleTheme={handleToggleTheme}
               initialTarget={learningTarget}
+              cheatSheetTarget={cheatSheetTarget}
+              closeMenusNonce={closeMenusNonce}
+              onRouteStateChange={handleLearnRouteStateChange}
             />
           </div>
-        ) : (
-          <>
+        )}
+        <div
+          className={
+            isLearningOpen
+              ? 'hidden'
+              : 'flex-1 min-h-0 flex flex-col overflow-hidden'
+          }
+        >
             {/* Firebase Config Missing Warning Banner */}
       {!isFirebaseConfigValid && (
         <div className="bg-warning-soft border-b border-[var(--color-warning)]/30 text-warning px-4 pl-safe pr-safe py-1.5 text-xs font-medium flex items-center justify-between gap-2 z-30 flex-shrink-0 animate-in fade-in">
@@ -3337,10 +3712,20 @@ export default function App() {
         activePreset={workspacePreset}
         onSetWorkspacePreset={handleSetWorkspacePreset}
         activeView={isLearningOpen ? 'learn' : 'editor'}
-        onViewChange={(v) => setIsLearningOpen(v === 'learn')}
-        onOpenLearn={() => setIsLearningOpen(true)}
+        onViewChange={(v) => {
+          if (v === 'learn') {
+            setHasMountedLearn(true);
+          }
+          setIsLearningOpen(v === 'learn');
+        }}
+        onOpenLearn={() => {
+          setHasMountedLearn(true);
+          setIsLearningOpen(true);
+        }}
         onOpenPersonalize={() => setIsPersonalizeOpen(true)}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onGoHome={handleGoHome}
+        closeMenusNonce={closeMenusNonce}
           currentProjectTitle={projectTitle}
           currentProjectDescription={activeCollabProject?.description || activeProject?.description}
           onUpdateProjectTitle={(t) => {
@@ -3516,7 +3901,9 @@ export default function App() {
         <div
           ref={containerRef}
           className={`flex-1 flex min-w-0 min-h-0 overflow-hidden relative order-1 md:order-2 ${
-            layout === 'horizontal' ? 'flex-col md:flex-row' : 'flex-col'
+            expandedPane === 'code' || layout !== 'horizontal'
+              ? 'flex-col'
+              : 'flex-col md:flex-row'
           }`}
         >
           {/* Editor Pane (Left or Top) */}
@@ -3524,6 +3911,10 @@ export default function App() {
             style={
               !isSplitDesktop
                 ? { flex: '1 1 100%', minWidth: 0, minHeight: 0 }
+                : expandedPane === 'code'
+                ? { flex: '1 1 0%', minWidth: 0, minHeight: 0 }
+                : expandedPane === 'preview'
+                ? { minWidth: 0, minHeight: 0 }
                 : {
                     flex: `0 0 ${splitRatio * 100}%`,
                     minWidth: layout === 'horizontal' ? (viewport.width < 1024 ? '190px' : '240px') : 0,
@@ -3531,7 +3922,11 @@ export default function App() {
                   }
             }
             className={`flex-col overflow-hidden transition-[flex-basis] duration-75 relative z-10 min-w-0 min-h-0 ${
-              mobileTab === 'preview' ? 'hidden md:flex' : 'flex'
+              expandedPane === 'preview' && isSplitDesktop
+                ? 'hidden'
+                : mobileTab === 'preview'
+                ? 'hidden md:flex'
+                : 'flex'
             }`}
           >
             <EditorPane
@@ -3558,6 +3953,10 @@ export default function App() {
               onAddLanguage={handleAddLanguage}
               onRemoveLanguage={handleRequestRemoveLanguage}
               autoFocusDesktop={!isSharedView && !isLearningOpen}
+              isExpanded={expandedPane === 'code'}
+              onToggleExpand={handleToggleExpandCode}
+              focusNonce={editorFocusNonce}
+              closeMenusNonce={closeMenusNonce}
               collabProjectId={activeCollabProject?.id}
               collabYDoc={collabProviderInstance?.ydoc ?? null}
               collabSyncReady={collabDocReady}
@@ -3584,14 +3983,18 @@ export default function App() {
           </div>
 
           {/* Draggable Resizer (Desktop only in split view) */}
-          <div className="hidden md:flex flex-shrink-0">
+          <div className={expandedPane !== null ? 'hidden' : 'hidden md:flex flex-shrink-0'}>
             <Resizer layout={layout} theme={theme} onResize={handleResize} />
           </div>
 
-          {/* Preview Pane (Right or Bottom) */}
+          {/* Preview Pane (Right or Bottom; Console & Issues stay visible full-width when code pane is expanded) */}
           <div
             style={
               !isSplitDesktop
+                ? { flex: '1 1 100%', minWidth: 0, minHeight: 0 }
+                : expandedPane === 'code'
+                ? { flex: '0 0 auto', width: '100%', minWidth: 0, minHeight: 0 }
+                : expandedPane === 'preview'
                 ? { flex: '1 1 100%', minWidth: 0, minHeight: 0 }
                 : {
                     flex: `0 0 ${(1 - splitRatio) * 100}%`,
@@ -3599,8 +4002,14 @@ export default function App() {
                     minHeight: layout === 'vertical' ? '160px' : 0,
                   }
             }
-            className={`flex-col flex-1 overflow-hidden relative z-10 min-w-0 min-h-0 ${
-              mobileTab === 'code' ? 'hidden md:flex' : 'flex'
+            className={`flex-col overflow-hidden relative z-10 min-w-0 min-h-0 ${
+              expandedPane === 'code' && isSplitDesktop
+                ? 'flex w-full flex-shrink-0'
+                : expandedPane === 'preview' && isSplitDesktop
+                ? 'flex flex-1'
+                : mobileTab === 'code'
+                ? 'hidden md:flex flex-1'
+                : 'flex flex-1'
             }`}
           >
             <PreviewPane
@@ -3623,6 +4032,9 @@ export default function App() {
               syncedPreviewState={syncedPreviewState}
               currentUserId={currentUser?.uid || ''}
               onPublishPreviewSync={handlePublishPreviewSync}
+              isExpanded={expandedPane === 'preview'}
+              onToggleExpand={handleToggleExpandPreview}
+              isPreviewBodyHidden={isSplitDesktop && expandedPane === 'code'}
             />
           </div>
 
@@ -3645,6 +4057,7 @@ export default function App() {
             <span className="truncate">Được tạo bởi tổ 4 — 12C6 — 2024-2027</span>
           </div>
         )}
+      </div>
       </div>
 
       {/* Confirmation Modal for Clearing Code */}
@@ -3801,13 +4214,19 @@ export default function App() {
         isFpsVisible={isFpsVisible}
         onSetWorkspacePreset={handleSetWorkspacePreset}
         activePreset={workspacePreset}
+        expandedPane={expandedPane}
+        onToggleExpandCode={handleToggleExpandCode}
+        onToggleExpandPreview={handleToggleExpandPreview}
         onToggleActivityBar={handleToggleActivityBar}
         isActivityBarVisible={isActivityBarVisible}
         onOpenPersonalize={() => setIsPersonalizeOpen(true)}
         onOpenProjects={() => setIsProjectsPanelOpen(true)}
         onOpenJoinByCode={handleOpenJoinByCode}
         onOpenTemplates={() => setIsTemplatesDrawerOpen(true)}
-        onOpenLearn={() => setIsLearningOpen(true)}
+        onOpenLearn={() => {
+          setHasMountedLearn(true);
+          setIsLearningOpen(true);
+        }}
         projects={projects}
         onSelectProject={handleSelectProject}
         isCodeEmpty={isCodeEmpty}
@@ -4092,7 +4511,7 @@ export default function App() {
       />
 
       {/* Team Chat Strip (Stage 4) */}
-      {activeCollabProject && currentUser && !isSharedView && (
+      {!isLearningOpen && activeCollabProject && currentUser && !isSharedView && (
         <CollabChatStrip
           projectId={activeCollabProject.id}
           currentUserId={currentUser.uid}
@@ -4106,8 +4525,6 @@ export default function App() {
           liftAboveMobileRun={mobileTab === 'preview' && !isSplitDesktop}
         />
       )}
-          </>
-        )}
 
         {/* Global Website Credit Footer */}
         <footer

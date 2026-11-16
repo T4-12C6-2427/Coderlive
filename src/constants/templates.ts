@@ -1,6 +1,8 @@
 import { CodeTemplate, TemplateCategory } from '../types';
 import { BATCH_1_WEBSITE_TEMPLATES } from './templates/batch1Websites';
 import { BATCH_2_TEMPLATES } from './templates/batch2ComponentsAndApps';
+import { BATCH_3_TEMPLATES } from './templates/batch3GamesAndEffects';
+import { BATCH_4_TEMPLATES } from './templates/batch4Learning';
 
 export const TEMPLATE_CATEGORIES: ReadonlyArray<'Tất cả' | TemplateCategory> = [
   'Tất cả',
@@ -601,6 +603,8 @@ export const CODE_TEMPLATES: CodeTemplate[] = [
   ...CORE_TEMPLATES,
   ...BATCH_1_WEBSITE_TEMPLATES,
   ...BATCH_2_TEMPLATES,
+  ...BATCH_3_TEMPLATES,
+  ...BATCH_4_TEMPLATES,
 ];
 
 export function hasTemplateHtml(template: CodeTemplate): boolean {

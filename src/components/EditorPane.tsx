@@ -7,7 +7,7 @@ import { Decoration, DecorationSet, EditorView, keymap } from '@codemirror/view'
 import { Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { yCollab, ySyncAnnotation, ySyncFacet, yUndoManagerKeymap } from 'y-codemirror.next';
 import * as Y from 'yjs';
-import { AlignLeft, Eye, Loader2, Lock, MessageSquare, Plus, Redo2, Undo2, X } from 'lucide-react';
+import { AlignLeft, Eye, Loader2, Lock, Maximize2, MessageSquare, Minimize2, Plus, Redo2, Undo2, X } from 'lucide-react';
 import {
   ThemeMode,
   EditorTab,
@@ -226,6 +226,10 @@ interface EditorPaneProps {
   onAddLanguage?: (lang: 'html' | 'css' | 'js') => void;
   onRemoveLanguage?: (lang: 'css' | 'js') => void;
   autoFocusDesktop?: boolean;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+  focusNonce?: number;
+  closeMenusNonce?: number;
   // Collaborative CRDT bindings
   collabProjectId?: string;
   collabYDoc?: Y.Doc | null;
@@ -284,6 +288,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   onAddLanguage,
   onRemoveLanguage,
   autoFocusDesktop = false,
+  isExpanded = false,
+  onToggleExpand,
+  focusNonce = 0,
+  closeMenusNonce = 0,
   collabProjectId,
   collabYDoc = null,
   collabSyncReady = false,
@@ -333,6 +341,23 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   const lastJumpNonceRef = useRef<number>(0);
   const lastCursorJumpNonceRef = useRef<number>(0);
   const lastAppliedHighlightNonceRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (closeMenusNonce <= 0) return;
+    setShowAddMenu(false);
+    setCommentPopover(null);
+  }, [closeMenusNonce]);
+
+  useEffect(() => {
+    if (focusNonce <= 0) return;
+    if (isReadOnly || isTouch || isMobile) return;
+    if (typeof window === 'undefined' || window.innerWidth < 768) return;
+    requestAnimationFrame(() => {
+      if (!document.querySelector('[role="dialog"]')) {
+        editorViewRef.current?.focus();
+      }
+    });
+  }, [focusNonce, isReadOnly, isTouch, isMobile]);
 
   const jumpHighlightExt = useMemo(() => {
     const setLinesEffect = StateEffect.define<Array<{ fromLine: number; toLine: number }>>();
@@ -1369,6 +1394,31 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             yText={activeCollabYText}
             fallbackCode={currentCode}
           />
+
+          {onToggleExpand && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              aria-pressed={isExpanded}
+              aria-label={isExpanded ? 'Thu nhỏ' : 'Phóng to khung code'}
+              title={
+                isTouch
+                  ? undefined
+                  : `${isExpanded ? 'Thu nhỏ' : 'Phóng to khung code'} (Ctrl+Alt+E)`
+              }
+              className={`hidden sm:inline-flex items-center justify-center min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 lg:w-7 lg:h-7 rounded-[var(--radius-xs)] border transition-colors cursor-pointer flex-shrink-0 focus-visible:ring-2 focus-visible:ring-[var(--accent-base)] focus-visible:outline-none ${
+                isExpanded
+                  ? 'bg-accent-soft text-accent border-[var(--accent-base)]/40'
+                  : 'text-secondary hover:text-primary hover:bg-[var(--border-subtle)] border-transparent'
+              }`}
+            >
+              {isExpanded ? (
+                <Minimize2 className="w-3.5 h-3.5" />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
         </div>
       </div>
 

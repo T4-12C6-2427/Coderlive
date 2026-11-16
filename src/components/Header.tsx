@@ -86,9 +86,11 @@ export interface HeaderProps {
   onViewChange?: (view: 'editor' | 'learn') => void;
   onOpenLearn?: () => void;
 
-  // Personalization & Command palette
+  // Personalization & Command palette & Home navigation
   onOpenPersonalize?: () => void;
   onOpenCommandPalette?: () => void;
+  onGoHome?: () => void;
+  closeMenusNonce?: number;
 
   // Cloud / Project / Auth props
   currentProjectTitle: string;
@@ -159,6 +161,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenLearn,
   onOpenPersonalize,
   onOpenCommandPalette,
+  onGoHome,
+  closeMenusNonce = 0,
   currentProjectTitle,
   currentProjectDescription,
   onUpdateProjectTitle,
@@ -242,13 +246,16 @@ export const Header: React.FC<HeaderProps> = ({
     setAvatarLoadError(false);
   }, [currentUser?.photoURL]);
 
-  // Reset dropdowns on auth or project change
+  // Reset dropdowns on auth or project change or explicit go-home trigger
   useEffect(() => {
     setShowUserDropdown(false);
     setShowMoreDropdown(false);
     setShowTemplateSubmenu(false);
     setShowPeoplePanel(false);
-  }, [currentUser, collabProject?.id, isCollabProject]);
+    if (closeMenusNonce > 0) {
+      setIsProfileOpen(false);
+    }
+  }, [currentUser, collabProject?.id, isCollabProject, closeMenusNonce]);
 
   // Outside click & escape listeners for portal menus
   useEffect(() => {
@@ -395,7 +402,19 @@ export const Header: React.FC<HeaderProps> = ({
         {/* ========================================================= */}
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 min-w-0">
           {/* Logo & Product Name */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <a
+            href="#/"
+            aria-label="Về trang chính"
+            title={isTouch ? undefined : 'Về trang chính'}
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+                return;
+              }
+              e.preventDefault();
+              onGoHome?.();
+            }}
+            className="flex items-center gap-2 flex-shrink-0 cursor-pointer rounded-[var(--radius-sm)] px-1 py-0.5 -ml-1 hover:bg-[var(--border-subtle)] active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-base)]"
+          >
             <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-accent text-accent-on flex items-center justify-center shadow-xs">
               <Code2 className="w-4 h-4 text-accent-on" strokeWidth={1.5} />
             </div>
@@ -407,7 +426,7 @@ export const Header: React.FC<HeaderProps> = ({
                 PRO
               </span>
             </div>
-          </div>
+          </a>
 
           {/* View Switcher: Segmented Control */}
           {!isSharedView && (
